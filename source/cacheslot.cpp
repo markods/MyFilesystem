@@ -1,0 +1,135 @@
+// _____________________________________________________________________________________________________________________________________________
+// CACHE.SLOT...CACHE.SLOT...CACHE.SLOT...CACHE.SLOT...CACHE.SLOT...CACHE.SLOT...CACHE.SLOT...CACHE.SLOT...CACHE.SLOT...CACHE.SLOT...CACHE.SLOT.
+// _____________________________________________________________________________________________________________________________________________
+// CACHE.SLOT...CACHE.SLOT...CACHE.SLOT...CACHE.SLOT...CACHE.SLOT...CACHE.SLOT...CACHE.SLOT...CACHE.SLOT...CACHE.SLOT...CACHE.SLOT...CACHE.SLOT.
+// _____________________________________________________________________________________________________________________________________________
+// CACHE.SLOT...CACHE.SLOT...CACHE.SLOT...CACHE.SLOT...CACHE.SLOT...CACHE.SLOT...CACHE.SLOT...CACHE.SLOT...CACHE.SLOT...CACHE.SLOT...CACHE.SLOT.
+
+#include <iostream>
+#include <iomanip>
+#include "cacheslot.h"
+using std::ostream;
+using std::ios_base;
+using std::setw;
+using std::hex;
+using std::dec;
+
+
+// default constructor for cache slot (can also be given a slot index)
+// the default cache slot has a invalid block id, an invalid slot index, is free, clean, not read from, and its hitcount is zero
+CacheSlot::CacheSlot(idx32 _slotidx)
+{
+    // set block status, index and cache slot
+    blockid = nullblk;
+    slotidx = _slotidx;
+    status  = 0UL;
+
+    // set default slot flags
+    setFree();
+    rstDirty();
+    rstReadFrom();
+    rstHitCount();
+}
+
+
+
+// get the block id (describes the position of the block on its partition, currently there is a limit to only one partition in the filesystem)
+ClusterNo CacheSlot::getBlockId() const { return blockid; }
+// get the slot index in the cache
+idx32 CacheSlot::getSlotIndex() const { return slotidx; }
+
+// set the block id (-||-)
+void CacheSlot::setBlockId(ClusterNo _blockid) { blockid = _blockid; }
+// set the index of this cache slot in its cache
+void CacheSlot::setSlotIndex(idx32 _slotidx) { slotidx = _slotidx; }
+
+
+
+// return if the slot is free
+bool CacheSlot::isFree()       const { return !((status >> notfree_off )    & notfree_mask    ); }
+// return if the slot is dirty
+bool CacheSlot::isDirty()      const { return !((status >> notdirty_off)    & notdirty_mask   ); }
+// return if the slot has been read from in the last iteration
+bool CacheSlot::isReadFrom()   const { return !((status >> notreadfrom_off) & notreadfrom_mask); }
+// return the slot hitcnt (probably increased multiple times in the last iteration, and definitely decrased once on the )
+uns32 CacheSlot::getHitCount() const { return  ((status >> hitcnt_off)      & hitcnt_mask     ); }
+
+
+// set the slot status as 'free'
+void CacheSlot::setFree()     { status &= ~(notfree_mask     << notfree_off    ); }
+// set the slot status as 'dirty'
+void CacheSlot::setDirty()    { status &= ~(notdirty_mask    << notdirty_off   ); }
+// set the slot status as 'readfrom'
+void CacheSlot::setReadFrom() { status &= ~(notreadfrom_mask << notreadfrom_off); }
+// increase hit count by given delta, return the part of the delta that was applied
+int32 CacheSlot::incHitCount(int32 delta)
+{
+    // save the old hit count
+    int32 old_hitcnt = (int32) getHitCount();
+    // copy the current hit count
+    int32 hitcnt = old_hitcnt - delta;
+    // if the hit count is negative, reset it to zero
+    if( hitcnt < 0 ) hitcnt = 0;
+    
+    // clear the hit count
+    status &= ~(hitcnt_mask << hitcnt_off);
+    // and set it to the new value
+    status |= (uns32) hitcnt;
+    
+    // return how much the hitcnt changed (the part of the delta that was applied)
+    return hitcnt - old_hitcnt;
+}
+
+
+// set the slot status as 'not free'
+void CacheSlot::rstFree()     { status |=  (notfree_mask     << notfree_off    ); }
+// set the slot status as 'not dirty'
+void CacheSlot::rstDirty()    { status |=  (notdirty_mask    << notdirty_off   ); }
+// set the slot status as 'not readfrom'
+void CacheSlot::rstReadFrom() { status |=  (notreadfrom_mask << notreadfrom_off); }
+// reset the slot hit count
+void CacheSlot::rstHitCount() { status &= ~(hitcnt_mask      << hitcnt_off     ); }
+
+
+
+// rvalue assignment operator for cache slot (lvalue isn't needed since the class has no special fields)
+CacheSlot& CacheSlot::operator=(const CacheSlot& slot)
+{
+    this->blockid = slot.blockid;
+    this->slotidx = slot.slotidx;
+    this->status  = slot.status;
+    return *this;
+}
+
+
+
+// used for swapping the cache slots in the heap based on their statuses (so that the cache slot with the best status for being swapped out is always at the top of the heap)
+bool operator< (const CacheSlot& slot1, const CacheSlot& slot2) { return slot1.status < slot2.status; }
+// used for comparing two cache slots with the same hash based on their block ids
+bool operator==(const CacheSlot& slot1, const CacheSlot& slot2) { return slot1.blockid == slot2.blockid; }
+// used for calculating the hash for the given cache slot in the hash map
+// find an entry in the hash map to put the given slot in, based on the block id of the block occupying the slot
+size_t CacheSlot::operator()(const CacheSlot& slot) const { return std::hash<ClusterNo>()(slot.blockid); }
+
+
+
+// print cache slot to output stream
+std::ostream& operator<<(std::ostream& os, const CacheSlot& slot)
+{
+    // backup format flags and set fill character
+    ios_base::fmtflags f(os.flags());
+    char c = os.fill('0');
+
+    // write cache slot info to output stream
+    os << "slot[" << setw(4) << slot.slotidx  << "]"
+       << hex << setw(4*bcw) << slot.blockid  << ":slot   " << dec
+       <<   (uns32) (slot.isFree()    ) << ":free "
+       <<   (uns32) (slot.isDirty()   ) << ":dirty "
+       <<   (uns32) (slot.isReadFrom()) << ":readfrom "
+       << setw(4) << slot.getHitCount() << ":hitcnt";
+
+     // restore format flags and fill character
+    os.flags(f); os.fill(c);
+    return os;
+}
+
