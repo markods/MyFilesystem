@@ -8,8 +8,8 @@ public:
 
 	virtual ClusterNo getNumOfClusters() const;   // number of clusters in partition
 
-	virtual int readCluster (ClusterNo,       Buffer buffer);   // reads from the cluster with given id to the given buffer, if successful returns 1, otherwise 0
-	virtual int writeCluster(ClusterNo, const Buffer buffer);   // writes from given buffer to the cluster with given id,    if successful returns 1, otherwise 0
+	virtual int readCluster (ClusterNo,       Buffer buffer);   // reads from the cluster with given id to the given buffer, if successful returns MFS_PART_OK, otherwise MFS_PART_ERR
+	virtual int writeCluster(ClusterNo, const Buffer buffer);   // writes from given buffer to the cluster with given id,    (-||-)
 
 	virtual ~Partition();   // virtual destructor
 

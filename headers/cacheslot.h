@@ -25,15 +25,19 @@ private:
     static const uns32 hitcnt_off       =  0UL;
 
 private:
-    ClusterNo blockid;   // id of the block (on its partition) that occupies this slot
     idx32 slotidx;       // index of the slot in the cache
+    ClusterNo blockid;   // id of the block (on its partition) that occupies this slot
     uns32 status;        // contains the following flags and counters -- notfree:1, notdirty:1, notreadfrom:1, hitcnt:24
 
 
 public:
     // default constructor for cache slot (can also be given a slot index)
-    // the default cache slot has a invalid block id, an invalid slot index, is free, clean, not read from, and its hitcount is zero
+    // the default cache slot has an invalid slot index, an invalid block id, is free, clean, not read from, and its hitcount is zero
+    // the slot index must have a default, because the heap which will hold these cache slots has to default initialize them!
     CacheSlot(idx32 slotidx = nullidx32);
+    // initialize the slot with default values for its fields (except for the slot index in the cache, presumably that doesn't change when the slot is reinitialized)
+    // the reinitialized cache slot has its previous slot index, an invalid block id, is free, clean, not read from, and its hitcount is zero
+    void init();
 
     ClusterNo getBlockId() const;          // get the block id (describes the position of the block on its partition, currently there is a limit to only one partition in the filesystem)
     idx32 getSlotIndex() const;            // get the slot index in the cache
@@ -43,7 +47,7 @@ public:
     bool isFree()       const;   // return if the slot is free
     bool isDirty()      const;   // return if the slot is dirty
     bool isReadFrom()   const;   // return if the slot has been read from in the last iteration
-    uns32 getHitCount() const;   // return the slot hitcnt (probably increased multiple times in the last iteration, and definitely decrased once on the )
+    uns32 getHitCount() const;   // return the slot hitcnt (probably increased multiple times in the last iteration, and definitely decreased once on the iteration ends)
 
     void setFree();                   // set the slot status as 'free'
     void setDirty();                  // set the slot status as 'dirty'

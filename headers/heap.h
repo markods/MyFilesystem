@@ -37,6 +37,7 @@ private:
 public:
     Heap();                      // construct the heap
     ~Heap();                     // destruct the heap
+    void clear();                // clear the heap
 
     bool push(const T& elem);    // insert element into heap, return true if insertion successful
     bool pop();                  // remove min element from heap, return true if removal successful
@@ -47,8 +48,9 @@ public:
     T& top();                    // return the min element, if the heap is empty return null element
     T& at(idx64 idx);            // return the element with the specified index, if the index is out of bounds return null element
 
-    bool update(idx64 idx);      // reorder element with given idx in heap (move it up towards or away from the root (min element) of the heap), return true if successful
-    void update();               // update entire heap (starting as if the elements were added one by one)
+    bool update(idx64 idx, T* oldkey = nullptr);   // reorder element with given idx in heap (move it up towards or away from the root (min element) of the heap), return true if successful
+                                                   // use the given old key to update the hash map entry too (without the old value it wouldn't be possible to find it in O(log n))
+    void rebuild();              // rebuild the heap (update entire heap starting as if the elements were added one by one, and rebuild the hash map as well)
 
 
     friend std::ostream& operator<<(std::ostream& os, Heap& h);     // preorder print heap to given ostream
@@ -76,10 +78,25 @@ template<typename T> Heap<T>::Heap()
 // destruct the heap
 template<typename T> Heap<T>::~Heap()
 {
-    if( elem ) { delete[] elem; elem = nullptr; }
-    cnt = 0;
-    cap = 0;
+    // clear the elements from the map
     map.clear();
+    // delete the element array
+    if( elem ) { delete[] elem; elem = nullptr; }
+    // reset the element count to zero
+    cnt = 0;
+    // reset the element array capacity to zero
+    cap = 0;
+}
+
+// clear the heap
+template<typename T> void Heap<T>::clear()
+{
+    // clear the elements from the map
+    map.clear();
+    // reset the element count to zero
+    cnt = 0;
+    // resize the underlying element array to its default value (since the element count is zero)
+    fitcap();
 }
 
 
@@ -145,7 +162,8 @@ template<typename T> T& Heap<T>::at(idx64 idx) { return (idx < cnt) ? elem[idx] 
 
 
 // reorder element with given idx in heap (move it up towards or away from the root (min element) of the heap), return true if successful
-template<typename T> bool Heap<T>::update(idx64 idx)
+// use the given old key to update the hash map entry too (without the old value it wouldn't be possible to find it in O(log n))
+template<typename T> bool Heap<T>::update(idx64 idx, T* oldkey)
 {
     // if the current element index is out of bounds, return false
     if( idx >= cnt ) return false;
@@ -188,16 +206,20 @@ template<typename T> bool Heap<T>::update(idx64 idx)
         idx = next;
     }
 
+    // if the key of the element changed before the update (before this function was called), remove the old entry from the hash map
+    if( oldkey ) map.erase(*oldkey);
     // finally update the remaining element index in the hash map
     map[elem[idx]] = idx;
     return true;
 }
 
-// update entire heap (starting as if the elements were added one by one)
-template<typename T> void Heap<T>::update()
+// rebuild the heap (update entire heap starting as if the elements were added one by one, and rebuild the hash map as well)
+template<typename T> void Heap<T>::rebuild()
 {
     // save the old count value
     siz64 oldcnt = cnt;
+    //clear the hash map
+    map.clear();
     // this is similar to inserting an element at the end of the heap and then updating its position in heap
     // this way, the elements shouldn't move much from their original positions, and the entire update is incremental
     // at the end of the loop the element count will have its old value, so no further action is needed
@@ -213,9 +235,16 @@ template<typename T> std::ostream& operator<<(std::ostream& os, Heap<T>& h) { re
 // preorder print heap to given ostream, and choose if the pretty print frame should be printed
 template<typename T> std::ostream& Heap<T>::print(std::ostream& os, bool drawframe)
 {
+    // backup format flags and set fill character to zero (used if the frame should be drawn)
+    std::ios_base::fmtflags f(os.flags());
+    char c = os.fill('=');
+
     // draw the top part of the surrounding frame if it is requested
     if( drawframe )
-        os << "======Heap<" << std::setw(4) << cnt << "/" << std::setw(4) << cap << ">=============" << std::endl;
+        os << "======Heap<" << std::setw(4) << cnt << "," << std::setw(4) << map.size() << "," << std::setw(4) << cap << ">========" << std::endl;
+
+    // set the stream fill character to a space
+    os.fill(' ');
 
     // if the heap is not empty, preorder print it
     if( cnt > 0 )
@@ -258,6 +287,8 @@ template<typename T> std::ostream& Heap<T>::print(std::ostream& os, bool drawfra
     if( drawframe )
         os << "----------------------------------" << std::endl;
 
+    // restore format flags and fill character
+    os.flags(f); os.fill(c);
     return os;
 }
 

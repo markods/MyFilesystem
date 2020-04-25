@@ -5,8 +5,6 @@
 // _____________________________________________________________________________________________________________________________________________
 // CACHE...CACHE...CACHE...CACHE...CACHE...CACHE...CACHE...CACHE...CACHE...CACHE...CACHE...CACHE...CACHE...CACHE...CACHE...CACHE...CACHE...CACHE
 
-#include <iostream>
-#include <iomanip>
 #include "cache.h"
 #include "block.h"
 #include "cacheslot.h"
@@ -14,86 +12,316 @@
 #include "monitor.h"
 
 
-// TODO: dodati komentare
+// construct the cache of given fixed size
 Cache::Cache(siz32 slotcnt)
 {
+    // reserve memory for the blocks in cache
     block = new Block[slotcnt];
+    SlotCount = slotcnt;
+    FreeSlots = slotcnt;
+
+    // create and fill the slots in the heap's hash map
     CacheSlot cs;
     for( idx32 i = 0; i < slotcnt; i++ )
     {
         cs.setSlotIndex(i);
         heapmap.push(cs);
     }
-    SlotCount = slotcnt;
-    FreeSlots = slotcnt;
+
 }
 
+// destruct the cache
 Cache::~Cache()
 {
+    // lock this function body
+    // the comma (;) is unneded, but it prevents intellisense from inserting an extra tab beneath the macro
     MONITORED(m);
+
+    // clear the heap
+    heapmap.clear();
+
+    // delete the block array and reset the block array pointer to null
     if( block ) { delete[] block; block = nullptr; }
+
+    // reset slotcount and the number of free slots to zero
     SlotCount = 0;
     FreeSlots = 0;
 }
 
 
 
-
-
-
-MFS Cache::readBlock(idx32 id)
+// read a block from the disk partition, through the cache, into the given buffer
+MFS Cache::readFromPart(Partition* part, idx32 blkid, Block& buffer)
 {
+    // lock this function body
     MONITORED(m);
+
+    // if the cache has been destroyed in the meantime, return an error code
     if( !block ) return MFS_ERROR;
-}
+    // if the given partition doesn't exist, return an error code
+    if( !part  ) return MFS_BADARGS;
 
-MFS Cache::writeBlock(idx32 id)
-{
-    MONITORED(m);
-    if( !block ) return MFS_ERROR;
-}
+    // create a temporary cache slot
+    CacheSlot temp;
+    // set its block id to the given block id
+    temp.setBlockId(blkid);
+    // try to locate the actual cache slot in the heap that holds the block with the given id
+    idx64 idx = heapmap.find(temp);
 
+    // if the block isn't already loaded in the cache
+    if( idx == nullidx64 )
+    {
+        // check if there is at least one free slot after applying the cache freeing policy, if there isn't return an error code
+        if( applyFreePolicy(part) != MFS_OK ) return MFS_ERROR;
+        // try to load the block with the given id from the disk into the cache, if the load fails return an error code
+        if( loadSlot(part, blkid) != MFS_OK ) return MFS_ERROR;
+        // find the index of the cache slot that the block was loaded into
+        idx = heapmap.find(temp);
+    }
 
-
-MFS Cache::loadBlock(Block blk, idx32 id)
-{
-    MONITORED(m);   // the comma (;) is unneded, but it prevents intellisense from inserting an extra tab beneath the macro
-    if( !block ) return MFS_ERROR;
-
-    if( FreeSlots == 0 ) freeSlots();
-    if( FreeSlots == 0 ) return MFS_ERROR;
-
-    CacheSlot& slot = heapmap.top();
-    slot.rstFree();
+    // copy the contents of the block (in cache) into the given buffer
+    block[idx].copyToBuffer(buffer);
+    
+    // update the cache slot information
+    // first make a reference to the cache slot
+    CacheSlot& slot = heapmap.at(idx);
+    // increase the slot hit count (since it was accessed once)
     slot.incHitCount(1);
-    heapmap.update(0);
+    // set that the slot has been read from at least once
+    slot.setReadFrom();
 
-    FreeSlots--;
+    // finally update the slot position in the heap
+    heapmap.update(idx);
     return MFS_OK;
 }
 
-MFS Cache::loadBlock(Partition* part, idx32 id)
+// write a block from the given buffer, through the cache, into the disk partition
+MFS Cache::writeToPart(Partition* part, idx32 blkid, Block& buffer)
 {
+    // lock this function body
     MONITORED(m);
+
+    // if the cache has been destroyed in the meantime, return an error code
     if( !block ) return MFS_ERROR;
+    // if the given partition doesn't exist, return an error code
+    if( !part  ) return MFS_BADARGS;
+
+    // create a temporary cache slot
+    CacheSlot temp;
+    // set its block id to the given block id
+    temp.setBlockId(blkid);
+    // try to locate the actual cache slot in the heap that holds the block with the given id
+    idx64 idx = heapmap.find(temp);
+
+    // if the block isn't already loaded in the cache
+    if( idx == nullidx64 )
+    {
+        // check if there is at least one free slot after applying the cache freeing policy, if there isn't return an error code
+        if( applyFreePolicy(part)   != MFS_OK ) return MFS_ERROR;
+        // try to load the block with the given id from the given buffer into the cache, if the load fails return an error code
+        if( loadSlot(buffer, blkid) != MFS_OK ) return MFS_ERROR;
+        // find the index of the cache slot that the block was loaded into
+        idx = heapmap.find(temp);
+    }
+    // otherwise
+    else
+    {
+        // copy the contents into the block (in cache) from the given buffer
+        block[idx].copyFromBuffer(buffer);
+    }
+
+    // update the cache slot information
+    // first make a reference to the cache slot
+    CacheSlot& slot = heapmap.at(idx);
+    // increase the slot hit count (since it was accessed once)
+    slot.incHitCount(1);
+    // set that the slot is dirty
+    slot.setDirty();
+
+    // finally update the slot position in the heap
+    heapmap.update(idx);
+    return MFS_OK;
 }
 
 
 
-MFS Cache::flushBlocks()
+// load a block into cache from given buffer (if there is enough room in the cache), return if successful
+MFS Cache::loadSlot(Block& buffer, idx32 blkid)
 {
+    // lock this function body
     MONITORED(m);
-    if( !block ) return MFS_ERROR;
+
+    // if the cache has been destroyed in the meantime, or it doesn't have enough free slots, return an error code
+    if( !block || FreeSlots == 0 ) return MFS_ERROR;
+    
+    // take the least recently used empty slot from the cache (LRU algorithm)
+    CacheSlot& slot = heapmap.top();
+    // save the old slot key
+    CacheSlot oldkey = slot;
+
+    // copy the given buffer contents into the block that the slot describes
+    block[slot.getSlotIndex()].copyFromBuffer(buffer);
+    // decrease the number of free slots in the cache
+    FreeSlots--;
+
+    // copy the block id into the slot
+    slot.setBlockId(blkid);
+    // set the slot status as being used (not free)
+    slot.rstFree();
+    // set starting slot hit count (give the slot a chance to stay longer in the cache since it's just been filled)
+    slot.incHitCount(StartingHitCount);
+
+    // update the slot position in the heap (it is the top (first) element in the heap)
+    // since the block id has changed, provide the old slot id as a function argument (in order for the hash map inside the heap to correctly update the entry)
+    // this has to be done as the last step, since the slot reference in this function won't point to the correct slot if the slot is moved in the heap (if the heap is updated)
+    heapmap.update(0, &oldkey);
+
+    // return that the operation was successful
+    return MFS_OK;
 }
 
-MFS Cache::freeSlots()
+// load a block into cache from the disk partition (if there is enough room in the cache), return if successful
+MFS Cache::loadSlot(Partition* part, idx32 blkid)
 {
+    // lock this function body
     MONITORED(m);
-    if( !block ) return MFS_ERROR;
+
+    // if the cache has been destroyed in the meantime, or it doesn't have enough free slots, return an error code
+    if( !block || FreeSlots == 0 ) return MFS_ERROR;
+    // if the given partition doesn't exist, return an error code
+    if( !part ) return MFS_BADARGS;
+
+    // take the least recently used empty slot from the cache (LRU algorithm)
+    CacheSlot& slot = heapmap.top();
+    // save the old slot key
+    CacheSlot oldkey = slot;
+
+    // copy the given buffer contents into the block that the slot describes
+    // if the copy fails, return an error code
+    if( part->readCluster(blkid, block[slot.getSlotIndex()]) != MFS_PART_OK ) return MFS_ERROR;
+    // decrease the number of free slots in the cache
+    FreeSlots--;
+
+    // copy the block id into the slot
+    slot.setBlockId(blkid);
+    // set the slot status as being used (not free)
+    slot.rstFree();
+    // set starting slot hit count (give the slot a chance to stay longer in the cache since it's just been filled)
+    slot.incHitCount(StartingHitCount);
+
+    // update the slot position in the heap (it is the top (first) element in the heap)
+    // since the block id has changed, provide the old slot id as a function argument (in order for the hash map inside the heap to correctly update the entry)
+    // this has to be done as the last step, since the slot reference (in this function) won't point to the correct slot if the slot is moved in the heap (if the heap is updated)
+    heapmap.update(0, &oldkey);
+
+    // return that the operation was successful
+    return MFS_OK;
 }
 
 
 
+// try to flush the requested number of blocks from cache onto the disk, and return the actual number of flushed blocks
+// also decrease the block hitcount by one for every block in the cache
+MFS32 Cache::flushSlots(Partition* part, siz32 count)
+{
+    // lock this function body
+    MONITORED(m);
+
+    // if the cache has been destroyed in the meantime, return an error code
+    if( !block ) return MFS_ERROR;
+    // if the partition doesn't exist, return an error code
+    if( !part  ) return MFS_BADARGS;
+
+    // flushed counter
+    siz32 flushed = 0;
+    // for each element in the heap
+    for( idx32 idx = 0; idx < heapmap.size(); idx++ )
+    {
+        // make a reference to the current cache slot
+        CacheSlot& slot = heapmap.at(idx);
+        // decrease the slot hit count
+        slot.incHitCount(-1);
+
+        // if the slot is dirty and the write to the disk was successful
+        if( slot.isDirty() && part->writeCluster(slot.getBlockId(), block[idx]) == MFS_PART_OK )
+        {
+            // reset the slot dirty flag
+            slot.rstDirty();
+            // increment the flushed counter
+            flushed++;
+        }
+    }
+
+    // finally rebuild the heap
+    heapmap.rebuild();
+    // return the actual number of blocks flushed
+    return flushed;
+}
+
+// try to free the requested number of blocks from the cache, and return the actual number of freed blocks
+// dirty blocks are flushed to disk before they are removed from cache (clean blocks are just removed)
+MFS32 Cache::freeSlots(Partition* part, siz32 count)
+{
+    // lock this function body
+    MONITORED(m);
+
+    // if the cache has been destroyed in the meantime, return an error code
+    if( !block ) return MFS_ERROR;
+    // if the partition doesn't exist, return an error code
+    if( !part  ) return MFS_BADARGS;
+
+    // cleared counter (for counting the number of cleared cache slots)
+    siz32 cleared = 0;
+    // for each element in the heap and while the number of cleared elements is less than requested:
+    for( idx32 idx = 0; idx < heapmap.size() && cleared < count; idx++ )
+    {
+        // make a reference to the current cache slot
+        CacheSlot& slot = heapmap.at(idx);
+
+        // if the cache slot is dirty and the write to the disk was successful
+        if( slot.isDirty() && part->writeCluster(slot.getBlockId(), block[idx]) == MFS_PART_OK )
+        {
+            // reset the slot dirty flag
+            slot.rstDirty();
+        }
+
+        // if the slot isn't dirty anymore (if the slot is dirty it can't be removed or data loss will occur)
+        if( !slot.isDirty() )
+        {
+            // initialize the cache slot (free, not dirty, not readfrom, hit count is zero, block id is invalid, keep the cache slot index)
+            slot.init();
+            // increment the cleared counter
+            cleared++;
+        }
+    }
+
+    // if at least one slot has been cleared, rebuild the entire heap
+    // (we have to rebuild the entire heap since we don't know the indexes of the slots that have been updated)
+    if( cleared != 0 ) heapmap.rebuild();
+    // return the actual number of blocks cleared
+    return cleared;
+}
+
+// check if there is at least one free slot in cache, if not then free some slots according to policy and return if there is at least one free slot now
+MFS Cache::applyFreePolicy(Partition* part)
+{
+    // lock this function body
+    MONITORED(m);
+
+    // if the cache has been destroyed in the meantime, return an error code
+    if( !block ) return MFS_ERROR;
+    // if the partition doesn't exist, return an error code
+    if( !part  ) return MFS_BADARGS;
+
+    // if the cache has at least one free slot, return success
+    if( FreeSlots > 0 ) return MFS_OK;
+
+    // try to free some slots
+    freeSlots(part, (siz32)(SlotCount*CacheFreePercent));
+
+    // return if the cache has at least one free slot now
+    return (FreeSlots > 0) ? MFS_OK : MFS_ERROR;
+}
 
 
 

@@ -8,11 +8,12 @@
 #pragma once
 
 
-// for debugging purposes only
+// ====== for debugging ======
 // if this symbol is defined, then unit testing functions will be defined in various other files
 #define DEBUG
 
 
+// ====== types ======
 // explicitly define standard C++ types with known bit sizes
 using uns8  = unsigned char;
 using uns16 = unsigned short;
@@ -58,9 +59,14 @@ constexpr idx64 nullidx64 = uns64max;
 
 
 
+// ====== MFS constants ======
+// mfs types
+using MFS   = int32;                // type for holding only statuses
+using MFS32 = int32;                // type for holding a non-negative 32-bit integer or error codes (less than zero)
+using MFS64 = int64;                // type for holding a non-negative 64-bit integer or error codes (less than zero)
+
 // mfs status codes
 // success codes are > 0, and error codes are <= 0
-using MFS = int32;                  // status type
 constexpr int32 MFS_GREATER =  4;   // comparison between A and B returned greater (A>B)
 constexpr int32 MFS_EQUAL   =  3;   // comparison between A and B returned equal (A==B)
 constexpr int32 MFS_LESS    =  2;   // comparison between A and B returned less (A<B)
@@ -77,15 +83,17 @@ constexpr uns32 lns = 5;    // line number spacing
 
 
 
-// types and constants in file "partition.h"
+// ====== types and constants in file "partition.h" ======
 using ClusterNo = idx32;
 using Buffer    = char*;
 constexpr siz32 ClusterSize = 2048;       // size of cluster on disk
 constexpr ClusterNo nullblk = uns32max;   // invalid block id
+constexpr int32 MFS_PART_OK  = 1;         // partition operation successful
+constexpr int32 MFS_PART_ERR = 0;         // partition operation unsuccessful or error
 
 
 
-// types and constants in file "fs.h"
+// ====== types and constants in file "fd.h" ======
 using FileCnt  = siz32;
 using BytesCnt = siz32;
 constexpr siz32 FileNameSize = 8+1;   // maximum length of filename in bytes (without extension, '.' and including '\0')
@@ -94,7 +102,7 @@ constexpr siz32 FullFileNameSize = FileNameSize-1 + 1 + FileExtSize;   // maximu
 
 
 
-// types and constants in file "block.h"
+// ====== types and constants in file "block.h" ======
 // size of block entries
 constexpr siz32 DataBlkEntrySize = 1;    // in bytes
 constexpr siz32 IndxBlkEntrySize = 4;    // in bytes
@@ -108,16 +116,23 @@ constexpr siz32 DireBlkSize = ClusterSize/DireBlkEntrySize;   // in number of en
 constexpr siz32 BitvBlkSize = ClusterSize/BitvBlkEntrySize;   // in number of entries
 
 // initial values filling each block type
-constexpr uns8 DataBlkInitVal = 0xcd;   // initial byte
-constexpr uns8 IndxBlkInitVal = 0x00;   // initial byte
-constexpr uns8 DireBlkInitVal = 0xcd;   // initial byte
-constexpr uns8 BitvBlkInitVal = 0x00;   // initial byte
+constexpr uns8 DataBlkInitVal = 0xcd;   // initial bytes for data block
+constexpr uns8 IndxBlkInitVal = 0x00;   // initial bytes for index block
+constexpr uns8 DireBlkInitVal = 0x00;   // initial bytes for directory block
+constexpr uns8 BitvBlkInitVal = 0x00;   // initial bytes for bit vector block
 
 // max file sizes of types Small, Medium and Large in bytes
 // (only counting pure data blocks, not counting index 1 block, index 2 block(s) or directory block entry)
 constexpr siz64 FileSizeS = 8;                                                 // in bytes (number of data block entries)
 constexpr siz64 FileSizeM = FileSizeS +             IndxBlkSize*DataBlkSize;   // in bytes (number of data block entries)
 constexpr siz64 FileSizeL = FileSizeM + IndxBlkSize*IndxBlkSize*DataBlkSize;   // in bytes (number of data block entries)
+
+
+
+// ====== types and constants in file "cache.h" ======
+constexpr int32 StartingHitCount  = 5;      // starting block hit count when the block is 
+constexpr flo32 CacheFreePercent  = .05f;   // percent of cache that should be cleared out by the 'free slots'  function
+constexpr flo32 CacheFlushPercent = .10f;   // percent of cache that should be flushed out by the 'flush slots' function
 
 
 

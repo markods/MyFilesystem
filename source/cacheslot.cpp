@@ -16,15 +16,29 @@ using std::dec;
 
 
 // default constructor for cache slot (can also be given a slot index)
-// the default cache slot has a invalid block id, an invalid slot index, is free, clean, not read from, and its hitcount is zero
+// the default cache slot has an invalid slot index, an invalid block id, is free, clean, not read from, and its hitcount is zero
+// the slot index must have a default, because the heap which will hold these cache slots has to default initialize them!
 CacheSlot::CacheSlot(idx32 _slotidx)
 {
-    // set block status, index and cache slot
-    blockid = nullblk;
+    // set slot index
     slotidx = _slotidx;
-    status  = 0UL;
+    // initialize slot to its default values
+    init();
+}
 
-    // set default slot flags
+// initialize the slot with default values for its fields (except for the slot index in the cache, presumably that doesn't change when the slot is reinitialized)
+// the reinitialized cache slot has its previous slot index, an invalid block id, is free, clean, not read from, and its hitcount is zero
+void CacheSlot::init()
+{
+    // slot index presumably doesn't change when the cache slot is reinitialized
+  //slotidx = unchanged;
+    // set block id
+    blockid = nullblk;
+
+    // reset all slot status flags (since there are unused bits in the status variable)
+    status = 0UL;
+
+    // set default slot flags in slot status
     setFree();
     rstDirty();
     rstReadFrom();
@@ -69,7 +83,9 @@ int32 CacheSlot::incHitCount(int32 delta)
     // copy the current hit count
     int32 hitcnt = old_hitcnt - delta;
     // if the hit count is negative, reset it to zero
-    if( hitcnt < 0 ) hitcnt = 0;
+    if( hitcnt < 0           ) hitcnt = 0;
+    // if the hit count is greater than its maximal allowed value, set it to its maximal allowed value
+    if( hitcnt > hitcnt_mask ) hitcnt = hitcnt_mask;
     
     // clear the hit count
     status &= ~(hitcnt_mask << hitcnt_off);
@@ -128,7 +144,7 @@ std::ostream& operator<<(std::ostream& os, const CacheSlot& slot)
        <<   (uns32) (slot.isReadFrom()) << ":readfrom "
        << setw(4) << slot.getHitCount() << ":hitcnt";
 
-     // restore format flags and fill character
+    // restore format flags and fill character
     os.flags(f); os.fill(c);
     return os;
 }

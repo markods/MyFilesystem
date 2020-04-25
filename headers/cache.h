@@ -7,7 +7,6 @@
 
 #pragma once
 #include <mutex>
-#include <iosfwd>
 #include "!global.h"
 #include "cacheslot.h"
 #include "heap.h"
@@ -16,6 +15,8 @@ class Partition;
 
 
 // cache for disk blocks
+// all the methods in this class are guarded and reentrant (except for the constructor which is unguarded,
+//                       since the object can only be accessed by a single thread during its construction)
 class Cache
 {
 private:
@@ -29,26 +30,31 @@ private:
 
 
 public:
-    // construct the cache given its fixed size
+    // construct the cache of given fixed size
     Cache(siz32 slotcnt);
-    // destruct the cache
+    // destruct the cache (without flushing dirty blocks!)
     ~Cache();
 
     // read a block from the disk partition, through the cache, into the given buffer
-    MFS readBlockFrom(Partition* part, idx32 id, Block buffer);
-    // write a block to the disk partition from the given buffer
-    MFS writeBlockTo(Partition* part, idx32 id, Block buffer);
+    MFS readFromPart(Partition* part, idx32 blkid, Block& buffer);
+    // write a block from the given buffer, through the cache, into the disk partition
+    MFS writeToPart (Partition* part, idx32 blkid, Block& buffer);
 
 private:
-    // load a block into cache from operating memory
-    MFS loadBlock(Block blk, idx32 id);
-    // load a block into cache from the disk partition
-    MFS loadBlock(Partition* part, idx32 id);
+    // load a block into cache from given buffer (if there is enough room in the cache), return if successful
+    MFS loadSlot(Block& buffer,   idx32 blkid);
+    // load a block into cache from the disk partition (if there is enough room in the cache), return if successful
+    MFS loadSlot(Partition* part, idx32 blkid);
 
-    // flush a given number of blocks from cache onto the disk
-    MFS flushBlocks(siz32 count);
-    // remove 
-    MFS freeSlots(siz32 count);
+    // try to flush the requested number of blocks from cache onto the disk, and return the actual number of flushed blocks
+    // also decrease the block hitcount by one for every block in the cache
+    MFS32 flushSlots(Partition* part, siz32 count);
+    // try to free the requested number of blocks from the cache, and return the actual number of freed blocks
+    // dirty blocks are flushed to disk before they are removed from cache (clean blocks are just removed)
+    MFS32 freeSlots (Partition* part, siz32 count);
+
+    // check if there is at least one free slot in cache, if not then free some slots according to policy and return if there is at least one free slot now
+    MFS applyFreePolicy(Partition* part);
 };
 
 
