@@ -15,7 +15,9 @@
 // the empty block only has a header, which links it to other empty blocks in a doubly linked list
 struct EmptyBlockHeader
 {
-    idx32 next, prev;
+    idx32 prev, next;
+
+    void init();
     friend std::ostream& operator<<(std::ostream& os, const EmptyBlockHeader& head);
 };
 
@@ -24,19 +26,33 @@ struct EmptyBlockHeader
 struct DataBlock
 {
     uns8 byte[DataBlkSize];
+    
+    void init();
     friend std::ostream& operator<<(std::ostream& os, const DataBlock& blk);
 };
 
 // the index block indexes other blocks (data, index or directory blocks)
-// it comes in two variants: + level 1 index
-//                           + level 2 index
-//
-// level 1 index   ->   N level 2 indexes    (-> means indexes)
-// level 2 index   ->   N data blocks
+// it comes in two variants:
+// +   level 1 index   →   N level 2 indexes    (→ means indexes)
+// +   level 2 index   →   N data blocks
 // 
+// the used entries in the index block must be contiguous! (and begin from the start of the block)
+// during block deallocation the entries are compacted!
+// for example:
+//  >> index block
+//  idx      entry status
+//  =====================
+//  0        occupied
+//  …        occupied
+//  k        occupied
+//  k+1      not occupied
+//  …        not occupied
+//  last     not occupied
 struct IndexBlock
 {
     idx32 entry[IndxBlkSize];
+    
+    void init();
     friend std::ostream& operator<<(std::ostream& os, const IndexBlock& blk);
 };
 
@@ -53,9 +69,23 @@ struct IndexBlock
 // 
 // i1* - the partition's directory idx1 block is at a predefined location
 // 
+// the occupied file descriptors in the directory block must be contiguous! (and begin from the start of the block)
+// during block deallocation the file descriptors are compacted!
+// for example:
+//  >> directory block
+//  idx      file descriptor status
+//  ===============================
+//  0        taken
+//  …        taken
+//  k        taken
+//  k+1      not taken
+//  …        not taken
+//  last     not taken
 struct DirectoryBlock
 {
-    FileDescriptor entry[DireBlkSize];
+    FileDescriptor filedesc[DireBlkSize];
+    
+    void init();
     friend std::ostream& operator<<(std::ostream& os, const DirectoryBlock& blk);
 };
 
@@ -67,6 +97,8 @@ private:
     uns8 bits[BitvBlkSize];
 
 public:
+    void init();
+
     bool getBit(uns32 idx);
     void setBit(uns32 idx);
     void rstBit(uns32 idx);
@@ -79,13 +111,12 @@ public:
 // it can be treated as any of the existing block types
 union Block
 {
-    // EmptyBlockHeader head;
+ // EmptyBlockHeader head;
     DataBlock        data;
     IndexBlock       indx;
     DirectoryBlock   dire;
     BitVectorBlock   bitv;
 
-    void init(uns8 initval);
     void copyToBuffer(Buffer buffer) const;
     void copyFromBuffer(const Buffer buffer);
     operator Buffer();

@@ -17,22 +17,8 @@ using std::right;
 using std::hex;
 
 
-// clear file descriptor fields
-void FileDescriptor::clear()
-{
-    clearFullName();   // clear the descriptor fields that hold the long filename ([filename][ext][❒])
-    
-    indx1 = nullidx32;   // resetting first level 1 index of file to an invalid number
-    indx2 = nullidx32;   // resetting first level 2 index of file to an invalid number
-
-    // resetting first eight bytes of file
-    for( uns32 i = 0; i < FileSizeS; i++ ) byte[i] = 0;
-
-    filesize = 0;   // resetting filesize to zero
-}
-
-// clear file name descriptor fields
-void FileDescriptor::clearFullName()
+// reset the file name fields to their defaults
+void FileDescriptor::resetFullName()
 {
     // clear the descriptor fields that hold the long filename ([filename][ext][❒])
     //                    [filename]       [ext]          [❒]
@@ -40,17 +26,80 @@ void FileDescriptor::clearFullName()
         fname[i] = '\0';
 }
 
+// free the file descriptor (reset file descriptor fields to their defaults)
+void FileDescriptor::free()
+{
+    resetFullName();   // clear the descriptor fields that hold the long filename ([filename][ext][❒])
+    
+    indx1 = nullblk;   // resetting first level 1 index of file to an invalid number
+    indx2 = nullblk;   // resetting first level 2 index of file to an invalid number
 
+    // resetting first eight bytes of file
+    for( uns32 i = 0; i < FileSizeS; i++ ) byte[i] = 0;
+
+    filesize = 0;   // resetting filesize to zero
+}
+
+// check if the file descriptor is taken (is occupied)
+bool FileDescriptor::isTaken() { return (fname[0] != '\0' || fext[0] != '\0'); }
+
+
+
+// return if the full filename is valid according to the file descriptor specification
+// the filename and extension char buffers should be of at least FileNameSize and FileExtSize length
+MFS FileDescriptor::isFullNameValid(const char* str)
+{
+    // return if the given string is nullptr
+    if( !str ) return MFS_BADARGS;
+
+    // find the length of the filename and the extension
+    // examples:
+    // +  filename.ext❒   ->   [filename][ext][❒]
+    //    0      7 9  12         0      7  0 2
+    // +  f1.e❒           ->   [f1❒-----][e❒-][❒]
+    //    01 34                  01      7  01 
+    // +  a.b.c.d.eef❒    ->   [a.b.c.d❒][eef][❒]
+    //    0     6 8  11          0     6    0 2
+    uns32 n = 0;           // length of input string without '\0'
+    uns32 fname_len = 0;   // length of filename     without '\0'
+    uns32 fext_len  = 0;   // length of extension    without '\0'
+    for( ; str[n] != '\0' && n < FullFileNameSize-1 + 1; n++ )   // n goes to FullFileNameSize on purpose (not to FullFileNameSize-1), so that we can detect if the full filename is too long
+    {
+        // always increase extension length (pretend that the file is only the extension bit)
+        fext_len++;
+
+        // if the '.' (dot) is found:
+        // +   then the characters that we thought belonged to the extension are part of the filename
+        //     and there must be more characters that are part of the extension
+        // +   therefore increase filename length by the extension length, and reset the extension length
+        if( str[n] == '.' )
+        {
+            fname_len += fext_len;
+            fext_len = 0;
+        }
+    }
+
+    // if the filename is not empty, remove the last dot from it
+    if( fname_len > 0 ) fname_len--;
+
+    // the filename is invalid if:
+    // +   the filename length is too long   -or-
+    // +   the extension length is too long  -or-
+    // +   the filename and extension lengths are both zero
+    if( fname_len   > FileNameSize-1
+       || fext_len  > FileExtSize-1
+       || fname_len + fext_len == 0 )
+        return MFS_BADARGS;
+
+    // return that the filename is valid
+    return MFS_OK;
+}
 
 // copy filename and extension into given char buffer (minimal length of buffer is FullFileNameSize)
-MFS FileDescriptor::getFullName(char* const buf) const
+MFS FileDescriptor::getFullName(char* buf) const
 {
     // return if the given char buffer pointer is nullptr
-    if( !buf )
-    {
-        buf[0] = '\0';
-        return MFS_BADARGS;
-    }
+    if( !buf ) return MFS_BADARGS;
 
     // variable which holds the full filename length
     uns32 len = 0;
@@ -75,7 +124,7 @@ MFS FileDescriptor::getFullName(char* const buf) const
 }
 
 // set filename and extension from given string (null terminated)
-MFS FileDescriptor::setFullName(char* str)
+MFS FileDescriptor::setFullName(const char* str)
 {
     // return if the given string is nullptr
     if( !str ) return MFS_BADARGS;
@@ -120,7 +169,7 @@ MFS FileDescriptor::setFullName(char* str)
         return MFS_BADARGS;
 
     // clear the descriptor fields that hold the long filename ([filename][ext][❒])
-    clearFullName();
+    resetFullName();
     uns32 from = 0, to = 0;
 
     // copy the filename to the file descriptor
@@ -144,7 +193,7 @@ MFS FileDescriptor::setFullName(char* str)
 }
 
 // compare filename and extension with given string (null terminated)
-MFS FileDescriptor::cmpFullName(char* str) const
+MFS FileDescriptor::cmpFullName(const char* str) const
 {
     // return if the given string is nullptr
     if( !str ) return MFS_BADARGS;

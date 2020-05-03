@@ -29,7 +29,6 @@
     <ClInclude Include="headers\heap.h" />
     <ClInclude Include="headers\kfile.h" />
     <ClInclude Include="headers\kfs.h" />
-    <ClInclude Include="headers\monitor.h" />
     <ClInclude Include="headers\partition.h" />
   </ItemGroup>
   <ItemGroup>
@@ -39,6 +38,8 @@
     <ClCompile Include="source\fd.cpp" />
     <ClCompile Include="source\global.cpp" />
     <ClCompile Include="source\heap.cpp" />
+    <ClCompile Include="source\kfile.cpp" />
+    <ClCompile Include="source\kfs.cpp" />
     <ClCompile Include="source\main.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">

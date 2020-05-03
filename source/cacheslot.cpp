@@ -31,7 +31,7 @@ CacheSlot::CacheSlot(idx32 _slotidx)
 void CacheSlot::init()
 {
     // slot index presumably doesn't change when the cache slot is reinitialized
-  //slotidx = unchanged;
+ // slotidx = unchanged;
     // set block id
     blockid = nullblk;
 

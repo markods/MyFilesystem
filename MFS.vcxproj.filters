@@ -44,9 +44,6 @@
     <ClInclude Include="headers\cacheslot.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="headers\monitor.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="source\main.cpp">
@@ -68,6 +65,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="source\cacheslot.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="source\kfile.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="source\kfs.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

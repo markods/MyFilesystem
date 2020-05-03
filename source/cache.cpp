@@ -9,7 +9,6 @@
 #include "block.h"
 #include "cacheslot.h"
 #include "partition.h"
-#include "monitor.h"
 
 
 // construct the cache of given fixed size
@@ -33,10 +32,6 @@ Cache::Cache(siz32 slotcnt)
 // destruct the cache
 Cache::~Cache()
 {
-    // lock this function body
-    // the comma (;) is unneded, but it prevents intellisense from inserting an extra tab beneath the macro
-    MONITORED(m);
-
     // clear the heap
     heapmap.clear();
 
@@ -53,9 +48,6 @@ Cache::~Cache()
 // read a block from the disk partition, through the cache, into the given buffer
 MFS Cache::readFromPart(Partition* part, idx32 blkid, Block& buffer)
 {
-    // lock this function body
-    MONITORED(m);
-
     // if the cache has been destroyed in the meantime, return an error code
     if( !block ) return MFS_ERROR;
     // if the given partition doesn't exist, return an error code
@@ -98,9 +90,6 @@ MFS Cache::readFromPart(Partition* part, idx32 blkid, Block& buffer)
 // write a block from the given buffer, through the cache, into the disk partition
 MFS Cache::writeToPart(Partition* part, idx32 blkid, Block& buffer)
 {
-    // lock this function body
-    MONITORED(m);
-
     // if the cache has been destroyed in the meantime, return an error code
     if( !block ) return MFS_ERROR;
     // if the given partition doesn't exist, return an error code
@@ -145,12 +134,16 @@ MFS Cache::writeToPart(Partition* part, idx32 blkid, Block& buffer)
 
 
 
+// get the number of slots in cache
+siz32 Cache::getSlotCount() const { return SlotCount; }
+// get the number of free slots in cache
+siz32 Cache::getFreeSlotCount() const { return FreeSlots; }
+
+
+
 // load a block into cache from given buffer (if there is enough room in the cache), return if successful
 MFS Cache::loadSlot(Block& buffer, idx32 blkid)
 {
-    // lock this function body
-    MONITORED(m);
-
     // if the cache has been destroyed in the meantime, or it doesn't have enough free slots, return an error code
     if( !block || FreeSlots == 0 ) return MFS_ERROR;
     
@@ -183,9 +176,6 @@ MFS Cache::loadSlot(Block& buffer, idx32 blkid)
 // load a block into cache from the disk partition (if there is enough room in the cache), return if successful
 MFS Cache::loadSlot(Partition* part, idx32 blkid)
 {
-    // lock this function body
-    MONITORED(m);
-
     // if the cache has been destroyed in the meantime, or it doesn't have enough free slots, return an error code
     if( !block || FreeSlots == 0 ) return MFS_ERROR;
     // if the given partition doesn't exist, return an error code
@@ -224,9 +214,6 @@ MFS Cache::loadSlot(Partition* part, idx32 blkid)
 // also decrease the block hitcount by one for every block in the cache
 MFS32 Cache::flushSlots(Partition* part, siz32 count)
 {
-    // lock this function body
-    MONITORED(m);
-
     // if the cache has been destroyed in the meantime, return an error code
     if( !block ) return MFS_ERROR;
     // if the partition doesn't exist, return an error code
@@ -262,9 +249,6 @@ MFS32 Cache::flushSlots(Partition* part, siz32 count)
 // dirty blocks are flushed to disk before they are removed from cache (clean blocks are just removed)
 MFS32 Cache::freeSlots(Partition* part, siz32 count)
 {
-    // lock this function body
-    MONITORED(m);
-
     // if the cache has been destroyed in the meantime, return an error code
     if( !block ) return MFS_ERROR;
     // if the partition doesn't exist, return an error code
@@ -305,9 +289,6 @@ MFS32 Cache::freeSlots(Partition* part, siz32 count)
 // check if there is at least one free slot in cache, if not then free some slots according to policy and return if there is at least one free slot now
 MFS Cache::applyFreePolicy(Partition* part)
 {
-    // lock this function body
-    MONITORED(m);
-
     // if the cache has been destroyed in the meantime, return an error code
     if( !block ) return MFS_ERROR;
     // if the partition doesn't exist, return an error code
