@@ -18,6 +18,7 @@ private:
     friend class KFS;
 
     bool locked;
+    bool deleted;
     std::mutex m;
 
 private:
@@ -40,7 +41,7 @@ public:
     MFS write(siz32 count, Buffer buffer);
     // set the file seek position to the requested position
     MFS seek(idx32 position);
-    // truncate the file -- throw away its contents, but keep the file descriptor in the filesystem
+    // truncate the file -- throw away its contents from the given position, but keep the file descriptor in the filesystem
     MFS truncate();
 
     // get the current seek position
