@@ -7,18 +7,21 @@
 
 #pragma once
 #include "!global.h"
+#include <mutex>
 
 
 // kernel's implementation of a file
-// this class is not guarded, since it is not meant to be shared -- it is local to the thread that constructed it
+// TODO: opisati klasu bolje
 class KFile
 {
 private:
     friend class KFS;
 
+    bool locked;
+    std::mutex m;
 
 private:
-    // constuct the file object
+    // construct the file object
     // only the filesystem can construct the file object
     KFile();
 

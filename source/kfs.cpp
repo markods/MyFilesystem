@@ -9,38 +9,295 @@
 #include "block.h"
 #include "partition.h"
 #include "kfile.h"
-// used for locking a function method from when it is entered to its return statement/exception throw/end of body...
-using LockGuard = const std::lock_guard<std::mutex>;
 
 
-// TODO: napraviti thread koji periodicno zove flush kesa! (koristiti std::thread)
-// TOOD: napraviti metode AllocateBlock, FreeBlock
+// ====== thread-safe interface to this class's methods ======
 
-
-
-// ====== guarded methods ======
 // construct the filesystem
-KFS::KFS() {}
+KFS::KFS()
+{
+    // initialize the event mutexes to locked state (so that the threads trying to access them block)
+    m_part_unmounted  .lock();
+    m_all_files_closed.lock();
+}
 // destruct the filesystem
 KFS::~KFS()
 {
-    // lock this function body
-    LockGuard lock(m_excl);
+    // obtain exclusive access to the filesystem class instance
+    m_excl.lock();
+
+    // loop until the blocking condition is false
+    // if there is already a mounted partition and there are open files, make this thread wait until all the files on it are closed
+    while( part != nullptr && !open_files.empty() )
+    {
+        // increase the number of threads waiting for the all files closed event
+        m_all_files_closed_cnt++;
+
+        // release the exclusive access mutex
+        m_excl.unlock();
+
+        // wait for the all files closed event
+        m_all_files_closed.lock();
+
+        // the thread only reaches this point when some other thread unmounted the partition
+        // the other thread didn't release its exclusive access, which means that this thread continues with exclusive access (transfered implicitly by the other thread)
+
+        // decrease the number of threads waiting for the all files closed event
+        m_all_files_closed_cnt--;
+    }
+
+    // unconditionally unmount the given partition
+    MFS status = unmount_uc();
+
+    // release exclusive access
+    m_excl.unlock();
+
+    // at this point this thread doesn't have exclusive access to the filesystem class
+    // so it shouldn't do anything thread-unsafe (e.g. read the filesystem class state, ...)
+
+    // TODO: sacekati sve niti koje cekaju na nekom event-u ovde
+    //       ne bi trebalo da se proveravaju open files!
+    //       prekinuti nit koja radi flush! (unutar nje same), uraditi join sa njom u destruktoru!
+    //       postaviti fleg koji kaze da se radi destroy
+
+    // TODO: napraviti thread koji periodicno zove flush kesa! (koristiti std::thread)
+    //       napraviti metode AllocateBlock, FreeBlock
+
+    // TODO: poslati all files closed event unutar file close funkcije
+
 }
 
 
 
-// ====== unguarded methods ======
 // mount the partition into the filesystem (which has a maximum of one mounted partition at any time)
 // if there is already a mounted partition, make the thread that wants to mount another partition wait until the old partition is unmounted
-MFS KFS::_mount(Partition* partition)
+MFS KFS::mount(Partition* partition)
 {
     // if the given partition doesn't exist, return an error code
     if( !partition ) return MFS_BADARGS;
 
-    // if there is currently a mounted partition, wait until it is unmounted first
-    if( part != nullptr )
-        ;   // TODO: napraviti sinhronizaciju !
+    // obtain exclusive access to the filesystem class instance
+    m_excl.lock();
+
+    // loop until the blocking condition is false
+    // if there is already a mounted partition, make this thread wait until it is unmounted
+    while( partition != nullptr )
+    {
+        // increase the number of threads waiting for the unmount event
+        m_part_unmounted_cnt++;
+
+        // release the exclusive access mutex
+        m_excl.unlock();
+
+        // wait for the partition unmount event
+        m_part_unmounted.lock();
+
+        // the thread only reaches this point when some other thread unmounted the partition
+        // the other thread didn't release its exclusive access, which means that this thread continues with exclusive access (transfered implicitly by the other thread)
+
+        // decrease the number of threads waiting for unmount event
+        m_part_unmounted_cnt--;
+    }
+
+    // unconditionally mount the given partition
+    MFS status = mount_uc(partition);
+    
+    // release exclusive access
+    m_excl.unlock();
+
+    // at this point this thread doesn't have exclusive access to the filesystem class
+    // so it shouldn't do anything thread-unsafe (e.g. read the filesystem class state, ...)
+
+    // return the operation status
+    return status;
+}
+
+// unmount the partition from the filesystem
+// wake up a single thread that waited to mount another partition
+MFS KFS::unmount()
+{
+    // obtain exclusive access to the filesystem class instance
+    m_excl.lock();
+
+    // loop until the blocking condition is false
+    // if there is already a mounted partition and there are open files, make this thread wait until all the files on it are closed
+    while( part != nullptr && !open_files.empty() )
+    {
+        // increase the number of threads waiting for the all files closed event
+        m_all_files_closed_cnt++;
+
+        // release the exclusive access mutex
+        m_excl.unlock();
+
+        // wait for the all files closed event
+        m_all_files_closed.lock();
+
+        // the thread only reaches this point when some other thread unmounted the partition
+        // the other thread didn't release its exclusive access, which means that this thread continues with exclusive access (transfered implicitly by the other thread)
+
+        // decrease the number of threads waiting for the all files closed event
+        m_all_files_closed_cnt--;
+    }
+
+    // unconditionally unmount the given partition
+    MFS status = unmount_uc();
+
+    // if there are threads waiting for the unmount event, unblock one of them
+    if( m_part_unmounted_cnt > 0 )
+    {
+        // send an unmount event
+        m_part_unmounted.unlock();
+    }
+    else
+    {
+        // release exclusive access
+        m_excl.unlock();
+    }
+
+    // at this point this thread doesn't have exclusive access to the filesystem class
+    // so it shouldn't do anything thread-unsafe (e.g. read the filesystem class state, ...)
+
+    // return the operation status
+    return status;
+}
+
+
+
+// format the mounted partition
+MFS KFS::format()
+{
+    // obtain exclusive access to the filesystem class instance
+    m_excl.lock();
+
+    // loop until the blocking condition is false
+    // if there is already a mounted partition and there are open files, make this thread wait until all the files on it are closed
+    while( part != nullptr && !open_files.empty() )
+    {
+        // increase the number of threads waiting for the all files closed event
+        m_all_files_closed_cnt++;
+
+        // release the exclusive access mutex
+        m_excl.unlock();
+
+        // wait for the all files closed event
+        m_all_files_closed.lock();
+
+        // the thread only reaches this point when some other thread unmounted the partition
+        // the other thread didn't release its exclusive access, which means that this thread continues with exclusive access (transfered implicitly by the other thread)
+
+        // decrease the number of threads waiting for the all files closed event
+        m_all_files_closed_cnt--;
+    }
+
+    // unconditionally format the given partition
+    MFS status = format_uc();
+
+    // release exclusive access
+    m_excl.unlock();
+
+    // at this point this thread doesn't have exclusive access to the filesystem class
+    // so it shouldn't do anything thread-unsafe (e.g. read the filesystem class state, ...)
+
+    // return the operation status
+    return status;
+}
+
+// check if the mounted partition is formatted
+MFS KFS::isFormatted()
+{
+    // obtain exclusive access to the filesystem class instance
+    m_excl.lock();
+
+    // unconditionally check if the partition is formatted
+    MFS status = isFormatted_uc();
+
+    // release exclusive access
+    m_excl.unlock();
+
+    // at this point this thread doesn't have exclusive access to the filesystem class
+    // so it shouldn't do anything thread-unsafe (e.g. read the filesystem class state, ...)
+
+    // return the operation status
+    return status;
+}
+
+
+
+// open a file on the mounted partition with the given full file path (e.g. /myfile.cpp) and mode ('r'ead, 'w'rite, 'a'ppend)
+// +   read and append fail if the file with the given full path doesn't exist
+// +   write will try to open a file before writing to it if the file doesn't exist
+// if multiple threads try to work with a file, the first one gets access and the others have to wait until the first one closed its file handle
+KFile* KFS::openFile(const char* filepath, char mode)
+{
+    // TODO: napraviti
+}
+
+// delete a file on the mounted partition given the full file path (e.g. /myfile.cpp)
+// if multiple threads try to work with a file, the first one gets access and the others have to wait until the first one closed its file handle
+MFS KFS::deleteFile(const char* filepath)
+{
+    // TODO: napraviti
+}
+
+
+
+// check if a file exists in the root directory on the mounted partition, if it does return the index of its directory block in the root directory
+MFS32 KFS::fileExists(const char* filepath)
+{
+    // if there is no mounted partition, return an error code
+    if( !part ) return MFS_ERROR;
+    // if the filepath is missing, or it isn't absolute, return an error code
+    if( !filepath || filepath[0] != '/' ) return MFS_ERROR;
+    // if the full filename is invalid, return an error code
+    if( FileDescriptor::isFullNameValid(&filepath[1]) != MFS_OK ) return MFS_ERROR;
+
+    // obtain exclusive access to the filesystem class instance
+    m_excl.lock();
+
+    // unconditionally check if the file exists
+    MFS32 status = fileExists_uc(filepath);
+
+    // release exclusive access
+    m_excl.unlock();
+
+    // at this point this thread doesn't have exclusive access to the filesystem class
+    // so it shouldn't do anything thread-unsafe (e.g. read the filesystem class state, ...)
+
+    // return the operation status
+    return status;
+}
+
+// get the number of files in the root directory on the mounted partition
+MFS32 KFS::getRootFileCount()
+{
+    // obtain exclusive access to the filesystem class instance
+    m_excl.lock();
+
+    // unconditionally check if the file exists
+    MFS32 status = getRootFileCount_uc();
+
+    // release exclusive access
+    m_excl.unlock();
+
+    // at this point this thread doesn't have exclusive access to the filesystem class
+    // so it shouldn't do anything thread-unsafe (e.g. read the filesystem class state, ...)
+
+    // return the operation status
+    return status;
+}
+
+
+
+
+
+
+// ====== thread-unsafe methods ======
+
+// mount the partition into the filesystem (which has a maximum of one mounted partition at any time)
+MFS KFS::mount_uc(Partition* partition)
+{
+    // if the given partition doesn't exist, return an error code
+    if( !partition ) return MFS_BADARGS;
 
     // create a block that will be used as a bit vector block
     Block BITV;
@@ -61,8 +318,7 @@ MFS KFS::_mount(Partition* partition)
 }
 
 // unmount the partition from the filesystem
-// wake up a single thread that waited to mount another partition
-MFS KFS::_unmount()
+MFS KFS::unmount_uc()
 {
     // if there is already no mounted partition present, return that the operation was successful
     if( part == nullptr ) return MFS_OK;
@@ -79,9 +335,6 @@ MFS KFS::_unmount()
     // reset the partition file count to an invalid value
     filecnt = nullsiz32;
 
-    // TODO: napraviti sinhronizaciju !
-    ;
-
     // return that the operation was successful
     return MFS_OK;
 }
@@ -89,7 +342,7 @@ MFS KFS::_unmount()
 
 
 // format the mounted partition
-MFS KFS::_format()
+MFS KFS::format_uc()
 {
     // if the partition isn't mounted, return an error code
     if( !part ) return MFS_ERROR;
@@ -122,7 +375,7 @@ MFS KFS::_format()
 }
 
 // check if the mounted partition is formatted
-MFS KFS::_isFormatted() const
+MFS KFS::isFormatted_uc()
 {
     // if the partition isn't mounted, return an error code
     if( part == nullptr ) return MFS_ERROR;
@@ -165,8 +418,7 @@ MFS KFS::_isFormatted() const
 // open a file on the mounted partition with the given absolute file path (e.g. /myfile.cpp) and mode ('r'ead, 'w'rite, 'a'ppend)
 // +   read and append fail if the file with the given absolute file path doesn't exist
 // +   write will try to open a file before writing to it if the file doesn't exist, if it exists it will truncate it before writing
-// if multiple threads try to work with a file, the first one gets access and the others have to wait until the first one closed its file handle
-KFile* KFS::_openFile(const char* filepath, char mode)
+KFile* KFS::openFile_uc(const char* filepath, char mode)
 {
     // if there is no mounted partition, return a null pointer
     if( !part ) return nullptr;
@@ -178,11 +430,11 @@ KFile* KFS::_openFile(const char* filepath, char mode)
     if( FileDescriptor::isFullNameValid(&filepath[1]) != MFS_OK ) return nullptr;
 
     // TODO: dovrsiti
+    return nullptr;
 }
 
 // delete a file on the mounted partition given the full file path (e.g. /myfile.cpp)
-// if multiple threads try to work with a file, the first one gets access and the others have to wait until the first one closed its file handle
-MFS KFS::_deleteFile(const char* filepath)
+MFS KFS::deleteFile_uc(const char* filepath)
 {
     // if there is no mounted partition, return an error code
     if( !part ) return MFS_ERROR;
@@ -192,12 +444,13 @@ MFS KFS::_deleteFile(const char* filepath)
     if( FileDescriptor::isFullNameValid(&filepath[1]) != MFS_OK ) return MFS_ERROR;
 
     // TODO: dovrsiti
-    MFS32 idxDIRE = _fileExists(filepath);
+    MFS32 idxDIRE = fileExists_uc(filepath);
     if( idxDIRE < 0 ) return MFS_ERROR;
     if( idxDIRE == nullblk ) return MFS_OK;
     
 
     Block DIRE;
+    // TODO: napraviti da se update-uju file pokazivaci
 
 
     return MFS_OK;
@@ -206,7 +459,7 @@ MFS KFS::_deleteFile(const char* filepath)
 
 
 // check if a file exists in the root directory on the mounted partition, if it does return the index of its directory block in the root directory
-MFS32 KFS::_fileExists(const char* filepath)
+MFS32 KFS::fileExists_uc(const char* filepath)
 {
     // if there is no mounted partition, return an error code
     if( !part ) return MFS_ERROR;
@@ -249,7 +502,7 @@ MFS32 KFS::_fileExists(const char* filepath)
             if( cache.readFromPart(part, idxDIRE, DIRE) != MFS_OK ) status |= error;
 
             // for every file descriptor in the current directory block
-            for( idx32 idx3 = 0; idx3 < IndxBlkSize && !status; idx3++ )
+            for( idx32 idx3 = 0; idx3 < DireBlkSize && !status; idx3++ )
             {
                 // if the file descriptor is not taken, return to the previous level of traversal
                 if( !DIRE.dire.filedesc[idx3].isTaken() ) break;
@@ -267,7 +520,7 @@ MFS32 KFS::_fileExists(const char* filepath)
 }
 
 // get the number of files in the root directory on the mounted partition
-MFS32 KFS::_getRootFileCount()
+MFS32 KFS::getRootFileCount_uc()
 {
     // if there is no mounted partition, return an error code
     if( !part ) return MFS_ERROR;
@@ -310,7 +563,7 @@ MFS32 KFS::_getRootFileCount()
             if( cache.readFromPart(part, idxDIRE, DIRE) != MFS_OK ) status |= error;
 
             // for every file descriptor in the current directory block
-            for( idx32 idx3 = 0; idx3 < IndxBlkSize && !status; idx3++ )
+            for( idx32 idx3 = 0; idx3 < DireBlkSize && !status; idx3++ )
             {
                 // if the file descriptor is not taken, return to the previous level of traversal
                 if( !DIRE.dire.filedesc[idx3].isTaken() ) break;
