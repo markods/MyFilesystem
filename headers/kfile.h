@@ -17,9 +17,11 @@ class KFile
 private:
     friend class KFS;
 
-    bool locked;
-    bool deleted;
-    std::mutex m;
+private:
+    char mode { 'r' };
+
+    std::mutex mutex_open;
+    siz32 mutex_open_cnt = 0;
 
 private:
     // construct the file object
@@ -42,7 +44,7 @@ public:
     // set the file seek position to the requested position
     MFS seek(idx32 position);
     // truncate the file -- throw away its contents from the given position, but keep the file descriptor in the filesystem
-    MFS truncate();
+    MFS truncate(idx32 position);
 
     // get the current seek position
     MFS32 seekPos();

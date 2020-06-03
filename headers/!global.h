@@ -68,13 +68,13 @@ using MFS32 = int32;                // type for holding a non-negative 32-bit in
 using MFS64 = int64;                // type for holding a non-negative 64-bit integer or error codes (less than zero)
 
 // mfs status codes
-// success codes are > 0, and error codes are <= 0
+// success codes are >= 0, and error codes are < 0
 constexpr int32 MFS_GREATER =  4;   // comparison between A and B returned greater (A>B)
 constexpr int32 MFS_EQUAL   =  3;   // comparison between A and B returned equal (A==B)
 constexpr int32 MFS_LESS    =  2;   // comparison between A and B returned less (A<B)
-
 constexpr int32 MFS_OK      =  1;   // operation was successful (similar to true)
 constexpr int32 MFS_NOK     =  0;   // operation was unsuccessful (similar to false)
+
 constexpr int32 MFS_BADARGS = -1;   // bad arguments were given in function call
 constexpr int32 MFS_ERROR   = -2;   // operation failed due to some internal error
 // ...                              // user-defined status codes should be >= 10 or <= -10
@@ -133,9 +133,10 @@ constexpr flo32 CacheFlushPercent = .10f;   // percent of cache that should be f
 
 
 // ====== types and constants in file "kfs.h" ======
-constexpr siz32 InitialCacheSize  = 100;   // initial filesystem cache size
+constexpr siz32 InitialCacheSize  = 500;   // initial filesystem cache size
 constexpr idx32 BitvLocation      = 0;     // index of the bit vector block in the partition
 constexpr idx32 RootIndx1Location = 1;     // index of the first level index block of the root directory in the partition
+constexpr idx32 BlockPoolLocation = 2;     // index of the first block in the general purpose block pool
 
 
 

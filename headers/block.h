@@ -99,9 +99,10 @@ private:
 public:
     void init();
 
-    bool getBit(uns32 idx);
-    void setBit(uns32 idx);
-    void rstBit(uns32 idx);
+    bool isFree (idx32 idx);
+    bool isTaken(idx32 idx);
+    void reserve(idx32 idx);
+    void release(idx32 idx);
 
     friend std::ostream& operator<<(std::ostream& os, const BitVectorBlock& blk);
 };

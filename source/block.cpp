@@ -149,9 +149,10 @@ void BitVectorBlock::init()
         bits[i] = (uns8) 0x00;
 }
 
-bool BitVectorBlock::getBit(idx32 idx) { return !!(bits[idx/8] & (1u << (7-idx%8))); }   // !! - not not, converts the result to bool (values 0 or 1)
-void BitVectorBlock::setBit(idx32 idx) { bits[idx/8] |=  (1u << (7-idx%8)); }
-void BitVectorBlock::rstBit(idx32 idx) { bits[idx/8] &= ~(1u << (7-idx%8)); }
+bool BitVectorBlock::isFree (idx32 idx) { return !!( bits[idx/8] & (1u << (7-idx%8)) ); }   // !! - not not, converts the result to bool (values 0 or 1)
+bool BitVectorBlock::isTaken(idx32 idx) { return  !( bits[idx/8] & (1u << (7-idx%8)) ); }
+void BitVectorBlock::reserve(idx32 idx) { bits[idx/8] &= ~(1u << (7-idx%8)); }
+void BitVectorBlock::release(idx32 idx) { bits[idx/8] |=  (1u << (7-idx%8)); }
 
 // print bit vector block to output stream
 ostream& operator<<(ostream& os, const BitVectorBlock& blk)
