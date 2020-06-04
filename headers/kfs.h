@@ -25,19 +25,18 @@ using KFileHandle = std::shared_ptr<KFile>;
 class KFS
 {
 private:
-    // class used to represent a traversal position inside the root directory block
+    // class used to represent a traversal position inside the root directory/file
     struct Traversal
     {
-        idx32 locINDX1 { nullblk };   // location of the root directory level 1 index block on the partition
-        idx32 idx1 { nullidx32 };     // index of the entry pointing to the level 2 index block
-
-        idx32 locINDX2 { nullblk };   // location of the root directory level 2 index block on the partition
-        idx32 idx2 { nullidx32 };     // index of the entry pointing to the directory block
-
-        idx32 locDIRE { nullblk };    // location of the directory block (containing the requested file descriptor) on the partition
-        idx32 idx3 { nullidx32 };     // index of the requested file descriptor
+        idx32 loc[1 + MaxIndirections] { nullblk,   nullblk,   nullblk   };   // locations of the          directory/data block (loc[0]) and index blocks (loc[1], loc[2])
+        idx32 ent[1 + MaxIndirections] { nullidx32, nullidx32, nullidx32 };   // index of entry inside the directory/data block (ent[0]) and index blocks (ent[1], ent[2])
+        siz32 depth { MaxIndirections };                                      // number of indirections to the directory/data block (number of used array elements in the above arrays)
 
         siz32 filesScanned { 0 };     // number of files scanned during traversal
+        siz32 status { MFS_ERROR };   // status of the traversal
+
+        // initialize the traversal to start from the first entry in the given block, and also set the number of indirections on the traversal path
+        void init(idx32 StartBlockLocation, siz32 indirections);
     };
 
 private:
@@ -87,9 +86,9 @@ public:
     MFS fileExists(const char* filepath);
 
     // wait until no one uses the file with the given filepath
-    // open a file on the mounted partition with the given full file path (e.g. /myfile.cpp) and mode ('r'ead, 'w'rite, 'a'ppend)
+    // open a file on the mounted partition with the given full file path (e.g. /myfile.cpp) and mode ('r'ead, 'w'rite + read, 'a'ppend + read)
     // +   read and append fail if the file with the given full path doesn't exist
-    // +   write will try to open a file before writing to it if the file doesn't exist
+    // +   write will try to create a file before writing to it if the file doesn't exist
     KFileHandle openFile(const char* filepath, char mode);
     // close a file with the given full file path (e.g. /myfile.cpp)
     // wake up a single thread that waited to open the now closed file
@@ -98,14 +97,14 @@ public:
     // the delete will succeed only if the file is not being used by a thread (isn't open)
     MFS deleteFile(const char* filepath);
 
-    // read up to the requested number of bytes from the file starting from the given position into the given buffer, return the number of bytes read
+    // read up to the requested number of bytes from the file starting from the seek position into the given buffer, return the number of bytes read
     // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
-    MFS32 readFromFile(KFileHandle handle, idx32 pos, siz32 count, Buffer buffer);
-    // write the requested number of bytes from the buffer into the file starting from the given position
+    MFS32 readFromFile(KFileHandle handle, siz32 count, Buffer buffer);
+    // write the requested number of bytes from the buffer into the file starting from the seek position
     // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
-    MFS writeToFile(KFileHandle handle, idx32 pos, siz32 count, Buffer buffer);
-    // throw away the file's contents starting from the given position until the end of the file (but keep the file descriptor in the filesystem)
-    MFS truncateFile(KFileHandle handle, idx32 pos);
+    MFS writeToFile(KFileHandle handle, siz32 count, const Buffer buffer);
+    // throw away the file's contents starting from the seek position until the end of the file (but keep the file descriptor in the filesystem)
+    MFS truncateFile(KFileHandle handle);
 
 
 // ====== thread-unsafe methods ======
@@ -121,12 +120,16 @@ private:
     MFS allocateBlocks_uc(siz32 count, std::vector<idx32>& ids);
     // deallocate the blocks with the given ids from the partition, return if the deallocation was successful
     MFS freeBlocks_uc(const std::vector<idx32>& ids);
+    // 
+    MFS allocateDire_uc(Traversal& t);
+    // 
+    MFS freeDire_uc(Traversal& t);
 
     // check if the root full file path is valid (e.g. /myfile.cpp)
     static MFS isFullPathValid_uc(const char* filepath);
     // check if the root full file path is a match clause (special)
-    // "." -- matches first empty file descriptor
-    // ""  -- doesn't match any file
+    // "." -- matches the first empty file descriptor
+    // ""  -- never matches any file descriptor (used for counting the number of files in the directory)
     static MFS isFullPathSpecial_uc(const char* filepath);
 
     // check if the mounted partition is formatted
@@ -136,22 +139,25 @@ private:
     // check if a file exists in the root directory on the mounted partition, if it does return that it exists and the traversal position
     MFS fileExists_uc(const char* filepath, Traversal& t);
 
-    // open a file on the mounted partition with the given full file path (e.g. /myfile.cpp) and mode ('r'ead, 'w'rite, 'a'ppend)
+    // open a file handle on the mounted partition with the given full file path (e.g. /myfile.cpp) and mode ('r'ead, read + 'w'rite, read + 'a'ppend)
+    KFileHandle openFileHandle_uc(const char* filepath, char mode);
+    // close a file handle with the given full file path (e.g. /myfile.cpp)
+    MFS closeFileHandle_uc(KFileHandle handle);
+
+    // find or create a file on the mounted partition given the full file path (e.g. /myfile.cpp) and mode ('r'ead, 'w'rite + read, 'a'ppend + read), return the file position in the root directory
     // +   read and append fail if the file with the given full path doesn't exist
     // +   write will try to open a file before writing to it if the file doesn't exist
-    KFileHandle openFile_uc(const char* filepath, char mode);
-    // close a file with the given full file path (e.g. /myfile.cpp)
-    MFS closeFile_uc(KFileHandle handle);
+    MFS createFile_uc(const char* filepath, char mode, Traversal& t);
     // delete a file on the mounted partition given the full file path (e.g. /myfile.cpp)
     MFS deleteFile_uc(const char* filepath);
 
     // read up to the requested number of bytes from the file starting from the given position into the given buffer, return the number of bytes read
     // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
-    MFS32 readFromFile_uc(KFileHandle handle, idx32 pos, siz32 count, Buffer buffer);
+    MFS32 readFromFile_uc(Traversal& t, siz32 pos, siz32 count, Buffer buffer);
     // write the requested number of bytes from the buffer into the file starting from the given position
     // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
-    MFS writeToFile_uc(KFileHandle handle, idx32 pos, siz32 count, const Buffer buffer);
+    MFS writeToFile_uc(Traversal& t, siz32 count, const Buffer buffer);
     // throw away the file's contents starting from the given position until the end of the file (but keep the file descriptor in the filesystem)
-    MFS truncateFile_uc(KFileHandle handle, idx32 pos);
+    MFS truncateFile_uc(Traversal& t);
 };
 

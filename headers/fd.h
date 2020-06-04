@@ -19,12 +19,11 @@ private:
     char eos;                     // null character ('\0')
 
 public:
-    idx32 indx1;                  // first level 1 index of file (not needed if filesize <= 8 + IndexBlockSize*DataBlockSize, not counting indexes!)
-    siz32 filesize;               // size of file in data blocks
+    idx32 indx;                   // multi purpose index used as first level index/second level index/data block of file depending on the file size
+    siz32 filesize;               // size of file in bytes
 
     // 12 leftover bytes (in specification)
-    idx32 indx2;                  // first level 2 index of file (not needed if filesize <= 8B)
-    uns8 byte[FileSizeS];         // first eight bytes of file (not needed if filesize = 0)
+    uns8 byte[FileSizeS];         // first twelve bytes of file (not needed if filesize = 0)
 
 
 private:

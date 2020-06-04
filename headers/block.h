@@ -26,6 +26,7 @@ struct EmptyBlockHeader
 struct DataBlock
 {
     uns8 byte[DataBlkSize];
+    static const siz32 Size = DataBlkSize;
     
     void init();
     friend std::ostream& operator<<(std::ostream& os, const DataBlock& blk);
@@ -51,7 +52,8 @@ struct DataBlock
 struct IndexBlock
 {
     idx32 entry[IndxBlkSize];
-    
+    static const siz32 Size = IndxBlkSize;
+
     void init();
     friend std::ostream& operator<<(std::ostream& os, const IndexBlock& blk);
 };
@@ -84,7 +86,8 @@ struct IndexBlock
 struct DirectoryBlock
 {
     FileDescriptor filedesc[DireBlkSize];
-    
+    static const siz32 Size = DireBlkSize;
+
     void init();
     friend std::ostream& operator<<(std::ostream& os, const DirectoryBlock& blk);
 };
@@ -95,6 +98,7 @@ struct BitVectorBlock
 {
 private:
     uns8 bits[BitvBlkSize];
+    static const siz32 Size = BitvBlkSize;
 
 public:
     void init();

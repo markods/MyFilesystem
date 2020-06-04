@@ -119,7 +119,7 @@ constexpr siz32 BitvBlkSize = ClusterSize/BitvBlkEntrySize;   // in number of en
 
 // max file sizes of types Small, Medium and Large in bytes
 // (only counting pure data blocks, not counting index 1 block, index 2 block(s) or directory block entry)
-constexpr siz32 FileSizeS = 8;                                                 // in bytes (number of data block entries)
+constexpr siz32 FileSizeS = 12;                                                // in bytes (number of data block entries)
 constexpr siz32 FileSizeM = FileSizeS +             IndxBlkSize*DataBlkSize;   // in bytes (number of data block entries)
 constexpr siz32 FileSizeL = FileSizeM + IndxBlkSize*IndxBlkSize*DataBlkSize;   // in bytes (number of data block entries)
 
@@ -137,6 +137,12 @@ constexpr siz32 InitialCacheSize  = 500;   // initial filesystem cache size
 constexpr idx32 BitvLocation      = 0;     // index of the bit vector block in the partition
 constexpr idx32 RootIndx1Location = 1;     // index of the first level index block of the root directory in the partition
 constexpr idx32 BlockPoolLocation = 2;     // index of the first block in the general purpose block pool
+constexpr siz32 MaxIndirections   = 2;     // maximum number of index block indirections before the data/directory block
+
+// positions in the traversal arrays
+constexpr idx32 iINDX1 = 2;     // position of the   level 1 index block info in the traversal arrays
+constexpr idx32 iINDX2 = 1;     // position of the   level 2 index block info in the traversal arrays
+constexpr idx32 iBLOCK = 0;     // position of the general purpose block info in the traversal arrays
 
 
 

@@ -30,14 +30,11 @@ void FileDescriptor::resetFullName()
 void FileDescriptor::free()
 {
     resetFullName();   // clear the descriptor fields that hold the long filename ([filename][ext][❒])
-    
-    indx1 = nullblk;   // resetting first level 1 index of file to an invalid number
-    indx2 = nullblk;   // resetting first level 2 index of file to an invalid number
+    indx = nullblk;    // resetting multi purpose index of file to an invalid number
+    filesize = 0;      // resetting filesize to zero
 
     // resetting first eight bytes of file
     for( uns32 i = 0; i < FileSizeS; i++ ) byte[i] = 0;
-
-    filesize = 0;   // resetting filesize to zero
 }
 
 // check if the file descriptor is taken (is occupied)
@@ -241,15 +238,14 @@ ostream& operator<<(ostream& os, const FileDescriptor& fd)
     char fullname[FullFileNameSize];
     fd.getFullName(fullname);
 
-    // print the descriptor without the first eight bytes of file data
+    // print the file descriptor fields
     os << setfill('-')
         << setw(FullFileNameSize-1) << left << fullname << right << ":fn "
         << hex
-        << setw(uns32sz*bcw) << fd.filesize << ":B   "
-        << setw(uns32sz*bcw) << fd.indx1    << ":i1 "
-        << setw(uns32sz*bcw) << fd.indx2    << ":i2   ";
+        << setw(uns32sz*bcw) << fd.filesize << ":B "
+        << setw(uns32sz*bcw) << fd.indx     << ":i1   ";
 
-     // print the first eight bytes of file data
+    // print the first couple of bytes of the file in the file descriptor
     os << setfill('0') << hex;
     for( uns32 i = 1; i <= FileSizeS; i++ )
     {

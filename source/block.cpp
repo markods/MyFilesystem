@@ -47,7 +47,7 @@ ostream& operator<<(ostream& os, const EmptyBlockHeader& head)
 void DataBlock::init()
 {
     // initialize every byte of the data block to zero
-    for( idx32 i = 0; i < DataBlkSize; i++ )
+    for( idx32 i = 0; i < Size; i++ )
         byte[i] = (uns8) 0x00;
 }
 
@@ -62,7 +62,7 @@ ostream& operator<<(ostream& os, const DataBlock& blk)
 
     // print data block contents
     uns32 i;
-    for( i = 1; i <= DataBlkSize; i++ )
+    for( i = 1; i <= DataBlock::Size; i++ )
     {
         os << setw(uns8sz*bcw) << hex << (uns32) blk.byte[i-1];                   // casting byte (uns8) to uns32 for it to be correctly printed
         if     ( i % (epl*lns) == epl ) os << "   #" << dec << i/epl-1 << '\n';   // printing numbered line
@@ -83,7 +83,7 @@ ostream& operator<<(ostream& os, const DataBlock& blk)
 void IndexBlock::init()
 {
     // initialize every entry in the index block to the invalid block index
-    for( idx32 i = 0; i < IndxBlkSize; i++ )
+    for( idx32 i = 0; i < Size; i++ )
         entry[i] = nullblk;
 }
 
@@ -98,7 +98,7 @@ ostream& operator<<(ostream& os, const IndexBlock &blk)
 
     // print index block entries
     uns32 i;
-    for( i = 1; i <= IndxBlkSize; i++ )
+    for( i = 1; i <= IndexBlock::Size; i++ )
     {
         os << setw(uns32sz*bcw) << hex << blk.entry[i-1];
         if     ( i % (epl*lns) == epl ) os << "   #" << dec << i/4-1 << '\n';   // printing numbered lines
@@ -119,7 +119,7 @@ ostream& operator<<(ostream& os, const IndexBlock &blk)
 void DirectoryBlock::init()
 {
     // free every file descriptor in the directory block
-    for( idx32 i = 0; i < DireBlkSize; i++ )
+    for( idx32 i = 0; i < Size; i++ )
         filedesc[i].free();
 }
 
@@ -127,7 +127,7 @@ void DirectoryBlock::init()
 ostream& operator<<(ostream& os, const DirectoryBlock& blk)
 {
     // print directory block entries
-    for( uns32 i = 0; i < DireBlkSize; i++ )
+    for( uns32 i = 0; i < DirectoryBlock::Size; i++ )
     {
         os << blk.filedesc[i];
 
@@ -145,7 +145,7 @@ ostream& operator<<(ostream& os, const DirectoryBlock& blk)
 void BitVectorBlock::init()
 {
     // reset every bit in the bit vector block
-    for( idx32 i = 0; i < BitvBlkSize; i++ )
+    for( idx32 i = 0; i < BitVectorBlock::Size; i++ )
         bits[i] = (uns8) 0x00;
 }
 
@@ -166,13 +166,13 @@ ostream& operator<<(ostream& os, const BitVectorBlock& blk)
 // copy block contents to given buffer
 void Block::copyToBuffer(Buffer buffer) const
 {
-    for( uns32 i = 0; i < DataBlkSize; i++ )
+    for( uns32 i = 0; i < DataBlock::Size; i++ )
         buffer[i] = data.byte[i];
 }
 // copy given buffer contents to block
 void Block::copyFromBuffer(const Buffer buffer)
 {
-    for( uns32 i = 0; i < DataBlkSize; i++ )
+    for( uns32 i = 0; i < DataBlock::Size; i++ )
         data.byte[i] = buffer[i];
 }
 

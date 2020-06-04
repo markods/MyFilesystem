@@ -18,10 +18,15 @@ private:
     friend class KFS;
 
 private:
-    char mode { 'r' };
+    std::string filepath { };
+    char mode { '\0' };
+    idx32 pos { 0 };
+
+    idx32 locDIRE { nullblk };
+    idx32 idx3 { nullidx32 };
 
     std::mutex mutex_open;
-    siz32 mutex_open_cnt = 0;
+    siz32 mutex_open_cnt { 0 };
 
 private:
     // construct the file object
