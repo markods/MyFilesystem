@@ -51,7 +51,9 @@ MFS Cache::readFromPart(Partition* part, idx32 blkid, Block& buffer)
     // if the cache has been destroyed in the meantime, return an error code
     if( !block ) return MFS_ERROR;
     // if the given partition doesn't exist, return an error code
-    if( !part  ) return MFS_BADARGS;
+    if( !part ) return MFS_BADARGS;
+    // if the block id is invalid, return an error code
+    if( blkid == nullblk ) return MFS_BADARGS;
 
     // create a temporary cache slot
     CacheSlot temp;
@@ -94,6 +96,8 @@ MFS Cache::writeToPart(Partition* part, idx32 blkid, Block& buffer)
     if( !block ) return MFS_ERROR;
     // if the given partition doesn't exist, return an error code
     if( !part  ) return MFS_BADARGS;
+    // if the block id is invalid, return an error code
+    if( blkid == nullblk ) return MFS_BADARGS;
 
     // create a temporary cache slot
     CacheSlot temp;
@@ -146,7 +150,9 @@ MFS Cache::loadSlot(Block& buffer, idx32 blkid)
 {
     // if the cache has been destroyed in the meantime, or it doesn't have enough free slots, return an error code
     if( !block || FreeSlots == 0 ) return MFS_ERROR;
-    
+    // if the block id is invalid, return an error code
+    if( blkid == nullblk ) return MFS_BADARGS;
+
     // take the least recently used empty slot from the cache (LRU algorithm)
     CacheSlot& slot = heapmap.top();
     // save the old slot key
@@ -180,6 +186,8 @@ MFS Cache::loadSlot(Partition* part, idx32 blkid)
     if( !block || FreeSlots == 0 ) return MFS_ERROR;
     // if the given partition doesn't exist, return an error code
     if( !part ) return MFS_BADARGS;
+    // if the block id is invalid, return an error code
+    if( blkid == nullblk ) return MFS_BADARGS;
 
     // take the least recently used empty slot from the cache (LRU algorithm)
     CacheSlot& slot = heapmap.top();

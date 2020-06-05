@@ -28,15 +28,20 @@ private:
     // class used to represent a traversal position inside the root directory/file
     struct Traversal
     {
-        idx32 loc[1 + MaxIndirections] { nullblk,   nullblk,   nullblk   };   // locations of the          directory/data block (loc[0]) and index blocks (loc[1], loc[2])
-        idx32 ent[1 + MaxIndirections] { nullidx32, nullidx32, nullidx32 };   // index of entry inside the directory/data block (ent[0]) and index blocks (ent[1], ent[2])
-        siz32 depth { MaxIndirections };                                      // number of indirections to the directory/data block (number of used array elements in the above arrays)
+        // blocks:            DIRE/DATA  INDX2      INDX1
+        // array indexes:     iBLOCK     iINDX2     iINDX1
+        idx32 loc[MaxDepth] { nullblk,   nullblk,   nullblk   };   // locations of the          directory/data block (loc[0]) and index blocks (loc[1], loc[2])
+        idx32 ent[MaxDepth] { nullidx32, nullidx32, nullidx32 };   // index of entry inside the directory/data block (ent[0]) and index blocks (ent[1], ent[2])
+        siz32 depth { 0 };                                         // number of blocks on the traversal path before reaching useful data (number of used array elements in the above arrays)
 
         siz32 filesScanned { 0 };     // number of files scanned during traversal
         siz32 status { MFS_ERROR };   // status of the traversal
 
-        // initialize the traversal to start from the first entry in the given block, and also set the number of indirections on the traversal path
-        void init(idx32 StartBlockLocation, siz32 indirections);
+        // initialize the traversal to start from the first entry in the given block, and also set the number of blocks on the traversal path
+        void init(idx32 StartBlockLocation, siz32 depth);
+
+        // recalculate the depth of the traversal path using the location array
+        siz32 recalcDepth();
     };
 
 private:
@@ -86,25 +91,25 @@ public:
     MFS fileExists(const char* filepath);
 
     // wait until no one uses the file with the given filepath
-    // open a file on the mounted partition with the given full file path (e.g. /myfile.cpp) and mode ('r'ead, 'w'rite + read, 'a'ppend + read)
+    // open a file on the mounted partition with the given full file path (e.g. /myfile.cpp) and access mode ('r'ead, 'w'rite + read, 'a'ppend + read)
     // +   read and append fail if the file with the given full path doesn't exist
     // +   write will try to create a file before writing to it if the file doesn't exist
     KFileHandle openFile(const char* filepath, char mode);
     // close a file with the given full file path (e.g. /myfile.cpp)
     // wake up a single thread that waited to open the now closed file
-    MFS closeFile(KFileHandle handle);
+    MFS closeFile(KFileHandle& handle);
     // delete a file on the mounted partition given the fill file path (e.g. /myfile.cpp)
     // the delete will succeed only if the file is not being used by a thread (isn't open)
     MFS deleteFile(const char* filepath);
 
     // read up to the requested number of bytes from the file starting from the seek position into the given buffer, return the number of bytes read
     // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
-    MFS32 readFromFile(KFileHandle handle, siz32 count, Buffer buffer);
+    MFS32 readFromFile(KFileHandle& handle, siz32 count, Buffer buffer);
     // write the requested number of bytes from the buffer into the file starting from the seek position
     // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
-    MFS writeToFile(KFileHandle handle, siz32 count, const Buffer buffer);
+    MFS writeToFile(KFileHandle& handle, siz32 count, const Buffer buffer);
     // throw away the file's contents starting from the seek position until the end of the file (but keep the file descriptor in the filesystem)
-    MFS truncateFile(KFileHandle handle);
+    MFS truncateFile(KFileHandle& handle);
 
 
 // ====== thread-unsafe methods ======
@@ -117,35 +122,37 @@ private:
     MFS format_uc();
 
     // allocate the number of requested blocks on the partition, append their ids if the allocation was successful
-    MFS allocateBlocks_uc(siz32 count, std::vector<idx32>& ids);
+    MFS alocBlocks_uc(siz32 count, std::vector<idx32>& ids);
     // deallocate the blocks with the given ids from the partition, return if the deallocation was successful
     MFS freeBlocks_uc(const std::vector<idx32>& ids);
-    // 
-    MFS allocateDire_uc(Traversal& t);
-    // 
-    MFS freeDire_uc(Traversal& t);
+
+    // find or allocate a free file descriptor in the root directory, return its traversal position
+    MFS alocFd_uc(Traversal& t);
+    // deallocate the file descriptor with the given traversal position in the root directory, compact index and directory block entries if requested
+    MFS freeFd_uc(Traversal& t, bool compact = false);
 
     // check if the root full file path is valid (e.g. /myfile.cpp)
     static MFS isFullPathValid_uc(const char* filepath);
-    // check if the root full file path is a match clause (special)
-    // "." -- matches the first empty file descriptor
-    // ""  -- never matches any file descriptor (used for counting the number of files in the directory)
+    // check if the full file path is a special character
     static MFS isFullPathSpecial_uc(const char* filepath);
 
     // check if the mounted partition is formatted
     MFS isFormatted_uc();
     // get the number of files in the root directory on the mounted partition
     MFS32 getRootFileCount_uc();
-    // check if a file exists in the root directory on the mounted partition, if it does return that it exists and the traversal position
-    MFS fileExists_uc(const char* filepath, Traversal& t);
+    // find a file descriptor with the specified path, return the traversal position and if the find is successful
+    // "/file" -- find a file in the root directory
+    // "."     -- find the first location where an empty file descriptor should be in the root directory
+    // ""      -- count the number of files in the root directory (by matching a nonexistent file)
+    MFS findFile_uc(const char* filepath, Traversal& t);
 
     // open a file handle on the mounted partition with the given full file path (e.g. /myfile.cpp) and mode ('r'ead, read + 'w'rite, read + 'a'ppend)
     KFileHandle openFileHandle_uc(const char* filepath, char mode);
     // close a file handle with the given full file path (e.g. /myfile.cpp)
-    MFS closeFileHandle_uc(KFileHandle handle);
+    MFS closeFileHandle_uc(KFileHandle& handle);
 
-    // find or create a file on the mounted partition given the full file path (e.g. /myfile.cpp) and mode ('r'ead, 'w'rite + read, 'a'ppend + read), return the file position in the root directory
-    // +   read and append fail if the file with the given full path doesn't exist
+    // find or create a file on the mounted partition given the full file path (e.g. /myfile.cpp) and access mode ('r'ead, 'w'rite + read, 'a'ppend + read), return the file position in the root directory
+    // +   read and append will fail if the file with the given full path doesn't exist
     // +   write will try to open a file before writing to it if the file doesn't exist
     MFS createFile_uc(const char* filepath, char mode, Traversal& t);
     // delete a file on the mounted partition given the full file path (e.g. /myfile.cpp)
@@ -156,8 +163,8 @@ private:
     MFS32 readFromFile_uc(Traversal& t, siz32 pos, siz32 count, Buffer buffer);
     // write the requested number of bytes from the buffer into the file starting from the given position
     // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
-    MFS writeToFile_uc(Traversal& t, siz32 count, const Buffer buffer);
+    MFS writeToFile_uc(Traversal& t, siz32 pos, siz32 count, const Buffer buffer);
     // throw away the file's contents starting from the given position until the end of the file (but keep the file descriptor in the filesystem)
-    MFS truncateFile_uc(Traversal& t);
+    MFS truncateFile_uc(Traversal& t, siz32 pos);
 };
 

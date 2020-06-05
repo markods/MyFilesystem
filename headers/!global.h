@@ -102,6 +102,11 @@ constexpr siz32 FileNameSize = 8+1;   // maximum length of filename in bytes (wi
 constexpr siz32 FileExtSize  = 3+1;   // maximum length of file extension in bytes (including '\0')
 constexpr siz32 FullFileNameSize = FileNameSize-1 + 1 + FileExtSize;   // maximum length of filename + '.' + file extension in bytes (including '\0')
 
+// characters with special meaning
+const char special_char[special_char_cnt] = { '\\', '/', ':', '*', '?', '"', '<', '>', '|', '\0' };
+const siz32 special_char_cnt = 10;
+
+
 
 
 // ====== types and constants in file "block.h" ======
@@ -117,11 +122,14 @@ constexpr siz32 IndxBlkSize = ClusterSize/IndxBlkEntrySize;   // in number of en
 constexpr siz32 DireBlkSize = ClusterSize/DireBlkEntrySize;   // in number of entries
 constexpr siz32 BitvBlkSize = ClusterSize/BitvBlkEntrySize;   // in number of entries
 
-// max file sizes of types Small, Medium and Large in bytes
-// (only counting pure data blocks, not counting index 1 block, index 2 block(s) or directory block entry)
-constexpr siz32 FileSizeS = 12;                                                // in bytes (number of data block entries)
-constexpr siz32 FileSizeM = FileSizeS +             IndxBlkSize*DataBlkSize;   // in bytes (number of data block entries)
-constexpr siz32 FileSizeL = FileSizeM + IndxBlkSize*IndxBlkSize*DataBlkSize;   // in bytes (number of data block entries)
+// max file sizes of types Tiny, Small, Medium and Large, in bytes (only counting bytes of useful data)
+constexpr siz32 FileSizeT = 12;                                                // tiny   file size
+constexpr siz32 FileSizeS = FileSizeT +                         DataBlkSize;   // small  file size
+constexpr siz32 FileSizeM = FileSizeS +             IndxBlkSize*DataBlkSize;   // medium file size
+constexpr siz32 FileSizeL = FileSizeM + IndxBlkSize*IndxBlkSize*DataBlkSize;   // large  file size
+
+constexpr siz32 FileSizeLim[FileSizeLimCount] = { FileSizeT, FileSizeS, FileSizeM, FileSizeL };   // file size limit array
+constexpr siz32 FileSizeLimCount = 4;                                                             // number of elements in file size limit array
 
 
 
@@ -137,7 +145,7 @@ constexpr siz32 InitialCacheSize  = 500;   // initial filesystem cache size
 constexpr idx32 BitvLocation      = 0;     // index of the bit vector block in the partition
 constexpr idx32 RootIndx1Location = 1;     // index of the first level index block of the root directory in the partition
 constexpr idx32 BlockPoolLocation = 2;     // index of the first block in the general purpose block pool
-constexpr siz32 MaxIndirections   = 2;     // maximum number of index block indirections before the data/directory block
+constexpr siz32 MaxDepth          = 3;     // number of needed blocks before the useful data is reached (inside the data/directory block)
 
 // positions in the traversal arrays
 constexpr idx32 iINDX1 = 2;     // position of the   level 1 index block info in the traversal arrays

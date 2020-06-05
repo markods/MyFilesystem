@@ -11,11 +11,11 @@
 #include "kfile.h"
 
 
-// initialize the traversal to start from the first entry in the given block, and also set the number of indirections on the traversal path
-void KFS::Traversal::init(idx32 StartBlkLocation, siz32 depth = MaxIndirections)
+// initialize the traversal to start from the first entry in the given block, and also set the number of blocks on the traversal path
+void KFS::Traversal::init(idx32 StartBlkLocation, siz32 depth)
 {
     // initialize the locations and entry indexes to all invalid values
-    for( idx32 i = 0; i < MaxIndirections; i++ )
+    for( idx32 i = 0; i < MaxDepth; i++ )
     {
         loc[i] = nullblk;
         ent[i] = nullidx32;
@@ -35,6 +35,37 @@ void KFS::Traversal::init(idx32 StartBlkLocation, siz32 depth = MaxIndirections)
     status = MFS_ERROR;
 }
 
+// recalculate the depth of the traversal path using the location array
+siz32 KFS::Traversal::recalcDepth()
+{
+    // reset the traversal path depth
+    depth = 0;
+
+    // depth calculation examples:
+    //   + not nullblk
+    //   - nullblk
+    // ====================
+    // loc array      depth
+    // [ -  -  - ]    0
+    // [ +  -  - ]    1
+    // [ -  +  - ]    2
+    // [ +  +  - ]    2
+    // [ -  -  + ]    3
+    // [ -  +  + ]    3
+    // [ +  -  + ]    impossible (the array of + must be contiguous if the traversal is valid)
+    // [ +  +  + ]    3
+
+
+    // for all the location entries in the array
+    for( idx32 idx = 0;  idx < MaxDepth;  idx++ )
+    {
+        // if the current location points to a valid block, set its depth as the depth of the traversal (+1 since depth 0 means that the traversal path is empty -- contains no blocks)
+        if( loc[idx] != nullblk ) depth = idx + 1;
+    }
+
+    // return the traversal path depth
+    return depth;
+}
 
 
 
@@ -96,6 +127,11 @@ KFS::~KFS()
 
     // TODO: napraviti thread koji periodicno zove flush kesa! (koristiti std::thread)
     //       poslati all files closed event unutar file close funkcije
+
+    // TODO: proveriti da li se svi bool-ovi koriste unutar kfs i kfile!
+
+    // TODO: proveriti da li se file handle treba okruziti sa std::atomic<>
+    //       promeniti destruktor file handle-a tako da poziva closeFileHandle_uc
 
 }
 
@@ -279,7 +315,7 @@ MFS KFS::fileExists(const char* filepath)
 
     // unconditionally check if the file exists (the traversal position is not needed)
     Traversal t;
-    MFS status = fileExists_uc(filepath, t);
+    MFS status = findFile_uc(filepath, t);
 
     // release exclusive access
     mutex_excl.unlock();
@@ -294,9 +330,9 @@ MFS KFS::fileExists(const char* filepath)
 
 
 // wait until no one uses the file with the given filepath
-// open a file on the mounted partition with the given full file path (e.g. /myfile.cpp) and mode ('r'ead, 'w'rite, 'a'ppend)
+// open a file on the mounted partition with the given full file path (e.g. /myfile.cpp) and access mode ('r'ead, 'w'rite + read, 'a'ppend + read)
 // +   read and append fail if the file with the given full path doesn't exist
-// +   write will try to open a file before writing to it if the file doesn't exist
+// +   write will try to create a file before writing to it if the file doesn't exist
 KFileHandle KFS::openFile(const char* filepath, char mode)
 {
     // TODO: napraviti
@@ -304,7 +340,7 @@ KFileHandle KFS::openFile(const char* filepath, char mode)
 
 // close a file with the given full file path (e.g. /myfile.cpp)
 // wake up a single thread that waited to open the now closed file
-MFS KFS::closeFile(KFileHandle handle)
+MFS KFS::closeFile(KFileHandle& handle)
 {
     // TODO: napraviti
 }
@@ -320,20 +356,20 @@ MFS KFS::deleteFile(const char* filepath)
 
 // read up to the requested number of bytes from the file starting from the seek position into the given buffer, return the number of bytes read
 // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
-MFS32 KFS::readFromFile(KFileHandle handle, siz32 count, Buffer buffer)
+MFS32 KFS::readFromFile(KFileHandle& handle, siz32 count, Buffer buffer)
 {
     // TODO: napraviti
 }
 
 // write the requested number of bytes from the buffer into the file starting from the seek position
 // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
-MFS KFS::writeToFile(KFileHandle handle, siz32 count, Buffer buffer)
+MFS KFS::writeToFile(KFileHandle& handle, siz32 count, Buffer buffer)
 {
     // TODO: napraviti
 }
 
 // throw away the file's contents starting from the seek position until the end of the file (but keep the file descriptor in the filesystem)
-MFS KFS::truncateFile(KFileHandle handle)
+MFS KFS::truncateFile(KFileHandle& handle)
 {
     // TODO: napraviti
 }
@@ -425,6 +461,9 @@ MFS KFS::format_uc()
 
     // the partition is now formatted
     formatted = true;
+    // reset the partition file count to zero
+    filecnt = 0;
+
     // return that the operation was successful
     return MFS_OK;
 }
@@ -461,7 +500,7 @@ MFS KFS::format_uc()
 
 
 // allocate the number of requested blocks on the partition, append their ids if the allocation was successful
-MFS KFS::allocateBlocks_uc(siz32 count, std::vector<idx32>& ids)
+MFS KFS::alocBlocks_uc(siz32 count, std::vector<idx32>& ids)
 {
     // if the partition isn't formatted, return an error code
     if( !formatted ) return MFS_ERROR;
@@ -503,8 +542,8 @@ MFS KFS::allocateBlocks_uc(siz32 count, std::vector<idx32>& ids)
         for( idx32 i = 0; i < alloccnt; i++ )
             ids.pop_back();
 
-        // return an error code
-        return MFS_ERROR;
+        // if the requested number of block couldn't be allocated, return that the operation failed, otherwise return an error code
+        return (alloccnt != count) ? MFS_NOK : MFS_ERROR;
     }
 
     // return that the operation was successful
@@ -546,6 +585,145 @@ MFS KFS::freeBlocks_uc(const std::vector<idx32>& ids)
 
 
 
+// find or allocate a free file descriptor in the root directory, return its traversal position
+MFS KFS::alocFd_uc(Traversal& t)
+{
+    // try to find an empty file descriptor in the root directory
+    findFile_uc(".", t);
+
+    // if the search was successful or there was an error, return the status code
+    if( t.status != MFS_NOK ) return t.status;
+    // if the level 1 root index block isn't allocated return an error code
+    if( t.loc[iINDX1] == nullblk ) return t.status = MFS_ERROR;
+    // if the root directory is full return that the allocation failed (the root directory is full if the traversal level 1 (root) index entry is past the last entry in the block)
+    if( t.ent[iINDX1] == IndxBlkSize ) return t.status = MFS_NOK;
+
+
+    // vector for holding newly allocated block ids
+    std::vector<idx32> ids;
+
+    // try to allocate blocks for empty file descriptors
+    t.status = alocBlocks_uc(MaxDepth - t.depth, ids);
+
+    // if the allocation wasn't successful return its status
+    if( t.status != MFS_OK ) return t.status;
+
+    // create blocks for holding the level 1 root index, current level 2 root index and the current root directory block
+    Block INDX1, INDX2, BLOCK;
+    // set the allocation status
+    t.status = MFS_OK;
+    // set the status of the traversal connecting process
+    bool finish_connecting = false;
+
+    // start connecting the allocated blocks
+
+
+    // a do-while loop that always executes once (used because of the breaks -- if there was no loop surrounding the inner code, the code would be really messy)
+    do
+    {
+        // FIXME: the next section of code should be a for loop (0..MaxDepth-1) instead of the unrolled loop we currently see
+
+        // connecting the root directory block
+        {
+            // the directory block must be missing from the traversal path (since we are here, connecting the missing blocks)
+            // therefore, always initialize the directory block (instead of reading it from the partition)
+            if( true )
+            {
+                // initialize the directory block
+                BLOCK.dire.init();
+                // save the location of the directory block in the traversal (as the last - 0 newly allocated block)
+                t.loc[iBLOCK] = ids.at(ids.size()-1 - iBLOCK);
+                // reset the entry index in the directory block to point to the first entry inside the block
+                t.ent[iBLOCK] = 0;
+            }
+            else
+            {
+                // nothing here
+            }
+
+            // if the block write to the partition failed, skip the next bit of code
+            if( (t.status = cache.writeToPart(part, t.loc[iBLOCK], BLOCK)) != MFS_OK ) break;
+        }
+
+        // connecting the level 2 root index block
+        {
+            // if the level 2 index block is missing in the traversal path
+            if( t.loc[iINDX2] == nullblk )
+            {
+                // initialize the level 2 index block
+                INDX2.indx.init();
+                // save the location of the level 2 index block in the traversal (as the last - 1 newly allocated block)
+                t.loc[iINDX2] = ids.at(ids.size()-1 - iINDX2);
+                // reset the entry index in the level 2 index block to point to the first entry inside the block
+                t.ent[iINDX2] = 0;
+            }
+            // otherwise (if the level 2 index block is present in the traversal path)
+            else
+            {
+                // read the level 2 index block from the partition, if the read fails skip the next bit of code
+                if( (t.status = cache.readFromPart(part, t.loc[iINDX2], INDX2)) != MFS_OK ) break;
+                // set that the traversal connecting process should finish after connecting this block (since the block is present, the path is connected after the block update)
+                finish_connecting = true;
+            }
+
+            // point the first empty entry in the block to the location of the directory block in the path
+            INDX2.indx.entry[t.ent[iINDX2]] = t.loc[iBLOCK];
+            // if the block write to the partition failed, skip the next bit of code
+            if( ( t.status = cache.writeToPart(part, t.loc[iINDX2], INDX2) ) != MFS_OK ) break;
+
+            // if the traversal is complete, skip the next bit of code
+            if( finish_connecting ) break;
+        }
+
+        // connecting the level 1 root index block
+        {
+            // the level 1 root index block must always be present on the partition (specification simplification)
+            // therefore, always read the directory block from the partition (instead of initializing it)
+            if( false )
+            {
+                // nothing here
+            }
+            else
+            {
+                // read the level 1 index block from the partition, if the read fails skip the next bit of code
+                if( (t.status = cache.readFromPart(part, t.loc[iINDX1], INDX1)) != MFS_OK ) break;
+                // set that the traversal connecting process should finish after connecting this block (since the block is present, the path is connected after the block update)
+                finish_connecting = true;
+            }
+
+            // point the first empty entry in the block to the location of the level 2 index block in the path
+            INDX1.indx.entry[t.ent[iINDX1]] = t.loc[iINDX2];
+            // if the block write to the partition failed, skip the next bit of code
+            t.status = cache.writeToPart(part, t.loc[iINDX1], INDX1);
+
+            // if the traversal is complete, skip the next bit of code
+            if( finish_connecting ) break;
+        }
+
+    // end of do-while loop that executes always once
+    } while( false );
+
+
+    // if the traversal path is finally connected, return the success code
+    if( t.status == MFS_OK ) return t.status;
+
+    // otherwise, try to deallocate the newly allocated blocks, if the deallocation isn't successful return a serious error code (otherwise return that the allocation was unsuccessful)
+    // FIXME: if this deallocation fails, the filesystem is corrupt
+    //        currently there is no way to guarantee atomicity of all filesystem operations, since journalling isn't implemented
+    //        therefore we permanently lose one or two blocks on the partition :(
+    return ( ( t.status = freeBlocks_uc(ids) ) == MFS_OK ) ? MFS_NOK : MFS_ERROR;
+}
+
+// deallocate the file descriptor with the given traversal position in the root directory, compact index and directory block entries if requested
+MFS KFS::freeFd_uc(Traversal& t, bool compact)
+{
+    // TODO: napraviti
+}
+
+
+
+
+
 // check if the root full file path is valid (e.g. /myfile.cpp)
 MFS KFS::isFullPathValid_uc(const char* filepath)
 {
@@ -559,16 +737,27 @@ MFS KFS::isFullPathValid_uc(const char* filepath)
     return MFS_OK;
 }
 
-// check if the root full file path is a match clause (special)
-// "." -- matches the first empty file descriptor
-// ""  -- never matches any file descriptor (used for counting the number of files in the directory)
+// check if the full file path is a special character
 MFS KFS::isFullPathSpecial_uc(const char* filepath)
 {
-    // if the file path is missing, or it isn't a special character, return an invalid status code
-    if( !filepath || strcmp(filepath, ".") != 0 || strcmp(filepath, "") != 0 ) return MFS_NOK;
+    // if the file path is missing, return an invalid status code
+    if( !filepath ) return MFS_NOK;
 
-    // return that the absolute path is a match clause
-    return MFS_OK;
+    // create a temporary char buffer and initialize it to all null characters ('\0')
+    char str[2] = {};
+
+    // for every special character
+    for( idx32 i = 0; i < special_char_cnt; i++ )
+    {
+        // initialize the array to 
+        str[0] = special_char[i];
+
+        // if the file path matches the special character, return that the absolute path is not special
+        if( strcmp(filepath, str) == 0 ) return MFS_OK;
+    }
+
+    // return that the absolute path is not a match clause
+    return MFS_NOK;
 }
 
 
@@ -597,7 +786,7 @@ MFS32 KFS::getRootFileCount_uc()
     Traversal t;
 
     // get the number of files in the partition (by trying to find an unmatchable file, traverse the entire root directory structure)
-    MFS status = fileExists_uc("", t);
+    MFS status = findFile_uc("", t);
 
     // if the traversal hasn't failed (but not catastrophically), there must be something wrong
     if( status != MFS_NOK ) return MFS_ERROR;
@@ -609,59 +798,107 @@ MFS32 KFS::getRootFileCount_uc()
     return filecnt;
 }
 
-// check if a file exists in the root directory on the mounted partition, if it does return that it exists and the traversal position
-MFS KFS::fileExists_uc(const char* filepath, Traversal& t)
+// find a file descriptor with the specified path, return the traversal position and if the find is successful
+// "/file" -- find a file in the root directory
+// "."     -- find the first location where an empty file descriptor should be in the root directory
+// ""      -- count the number of files in the root directory (by matching a nonexistent file)
+MFS KFS::findFile_uc(const char* filepath, Traversal& t)
 {
     // if the partition isn't formatted, return an error code
     if( !formatted ) return MFS_ERROR;
 
-    // if the filepath is invalid and not a special character, return an error code
-    if( isFullPathValid_uc  (filepath) != MFS_OK
-     && isFullPathSpecial_uc(filepath) != MFS_OK ) return MFS_ERROR;
+    // create variables that tell if the full file path is valid or a special character
+    MFS valid, special;
 
-    // create temporary blocks that will hold the root directory's level1 index block, one of its level2 index blocks and one of its directory blocks during the traversal
-    Block INDX1, INDX2, DIRE;
+    // if the full file path is invalid and not a special character, return an error code
+    if( ( valid   = isFullPathValid_uc  (filepath) ) != MFS_OK
+     && ( special = isFullPathSpecial_uc(filepath) ) != MFS_OK )
+       return MFS_BADARGS;
+
+    // bool that says if the search is for the first location where an empty file descriptor should be
+    bool find_empty_fd = (special == MFS_OK) && (filepath[0] == '\0');
+
+
+    // a padded block has an empty entry immediately after the block, which will be initialized with the default value for that block type
+    struct PaddedBlock
+    {
+        Block block;                                    // the actual block with useful data
+        union { idx32 indx; FileDescriptor fd; } pad;   // empty entry that should be default initialized
+    };
+
+    // create an array of three padded blocks
+    PaddedBlock paddedINDX1, paddedINDX2, paddedDIRE;
+    // create references to the block part of the padded blocks
+    // the blocks will hold the root directory's level1 index block, one of its level2 index blocks and one of its directory blocks during the traversal
+    Block& INDX1 { paddedINDX1.block };
+    Block& INDX2 { paddedINDX2.block };
+    Block& DIRE  { paddedDIRE .block };
+    // initialize the paddings in the padded blocks
+    paddedINDX1.pad.indx = nullblk;
+    paddedINDX2.pad.indx = nullblk;
+    paddedDIRE .pad.fd.setFullName("*");   // an invalid filename
 
     // start the traversal from the beginning of the root directory index1 block
-    t.init(RootIndx1Location);
+    t.init(RootIndx1Location, MaxDepth);
 
     // set the status of the search
     t.status = MFS_NOK;
 
 
+    // start the search
+
     // if the root directory's index1 block couldn't be read, remember that an error occured
     if( cache.readFromPart(part, t.loc[iINDX1], INDX1) != MFS_OK ) t.status = MFS_ERROR;
 
     // for every entry in the root directory's index1 block
-    for( t.ent[iINDX1] = 0;   t.ent[iINDX1] < IndexBlock::Size && t.status == MFS_NOK;   t.ent[iINDX1]++ )
+    for( t.ent[iINDX1] = 0;   t.status == MFS_NOK;   t.ent[iINDX1]++ )
     {
-        // if the entry doesn't point to a valid index2 block, return to the previous level of the traversal
-        if( (t.loc[iINDX2] = INDX1.indx.entry[t.ent[iINDX1]]) == nullblk ) break;
+        // if the entry doesn't point to a valid index2 block
+        if( (t.loc[iINDX2] = INDX1.indx.entry[t.ent[iINDX1]]) == nullblk )
+        {
+            // if the search is for an empty file descriptor, set the status as not found (since the file descriptor hasn't been allocated)
+            if( find_empty_fd ) t.status = MFS_NOK;
+            // return to the previous level of the traversal
+            break;
+        }
+
         // if the current index2 block couldn't be read, remember that an error occured
         if( cache.readFromPart(part, t.loc[iINDX2], INDX2) != MFS_OK ) t.status = MFS_ERROR;
 
         // for every entry in the current index2 block
-        for( t.ent[iINDX2] = 0;   t.ent[iINDX2] < IndexBlock::Size && t.status == MFS_NOK;   t.ent[iINDX2]++ )
+        for( t.ent[iINDX2] = 0;   t.status == MFS_NOK;   t.ent[iINDX2]++ )
         {
-            // if the entry doesn't point to a valid directory block, return to the previous level of the traversal
-            if( (t.loc[iBLOCK] = INDX2.indx.entry[t.ent[iINDX2]]) == nullblk ) break;
+            // if the entry doesn't point to a valid directory block
+            if( (t.loc[iBLOCK] = INDX2.indx.entry[t.ent[iINDX2]]) == nullblk )
+            {
+                // if the search is for an empty file descriptor, set the status as not found (since the file descriptor hasn't been allocated)
+                if( find_empty_fd ) t.status = MFS_NOK;
+                // return to the previous level of the traversal
+                break;
+            }
+
             // if the current directory block couldn't be read, remember that an error occured
             if( cache.readFromPart(part, t.loc[iBLOCK], DIRE) != MFS_OK ) t.status = MFS_ERROR;
 
             // for every file descriptor in the current directory block
-            for( t.ent[iBLOCK] = 0;   t.ent[iBLOCK] < DirectoryBlock::Size && t.status == MFS_NOK;   t.ent[iBLOCK]++ )
+            for( t.ent[iBLOCK] = 0;   t.status == MFS_NOK;   t.ent[iBLOCK]++ )
             {
                 // if the given full file name matches the full file name in the file descriptor, the search is successful
                 // this comparison must be before the conditional break, because sometimes we need to match an empty file descriptor!
                 if( DIRE.dire.filedesc[t.ent[iBLOCK]].cmpFullName(&filepath[1]) == MFS_EQUAL ) t.status = MFS_OK;
-                // if the file descriptor is not taken, return to the previous level of traversal
-                if( !DIRE.dire.filedesc[t.ent[iBLOCK]].isTaken() ) break;
+
+                // if the file descriptor is free (not taken), return to the previous level of traversal
+                if( DIRE.dire.filedesc[t.ent[iBLOCK]].isFree() ) break;
+                
                 // increase the number of scanned files (since the file descriptor is taken)
                 t.filesScanned++;
             }
         }
     }
 
+
+    // recalculate the depth of the traversal
+    t.recalcDepth();
 
     // return the status of the search
     return t.status;
@@ -681,83 +918,83 @@ KFileHandle KFS::openFileHandle_uc(const char* filepath, char mode)
     // if the filepath is invalid, return an error code
     if( isFullPathValid_uc(filepath) != MFS_OK ) return nullptr;
 
-    // 
+    // create a string from the full file path char array
     std::string path { filepath };
-    // 
+    // if a handle with the (newly created string) path doesn't exist, create it
     if( open_files.find(path) == open_files.cend() )
         open_files[path] = KFileHandle { new KFile() };
 
-    // 
+    // get the file handle with the (string) path
     KFileHandle handle { open_files[path] };
-    //
+    // initialize the file handle
+    // TODO: inicijalizovati file handle
     handle->mode = mode;
 
-    // 
+    // return the handle
     return handle;
 }
 
 // close a file handle with the given full file path (e.g. /myfile.cpp)
-MFS KFS::closeFileHandle_uc(KFileHandle handle)
+MFS KFS::closeFileHandle_uc(KFileHandle& handle)
 {
-    // 
+    // if the handle is empty, return an error code
     if( !handle ) return MFS_ERROR;
 
-    // 
+    // if there are no threads waiting for access to the file, remove the file handle from the open file table
     if( handle->mutex_open_cnt == 0 )
         open_files.erase(handle->filepath);
     
-    // 
+    // close the file handle
+    handle.reset();
+
+    // return that the handle was successfully closed
     return MFS_OK;
 }
 
 
 
-// find or create a file on the mounted partition given the full file path (e.g. /myfile.cpp) and mode ('r'ead, 'w'rite + read, 'a'ppend + read), return the file position in the root directory
-// +   read and append fail if the file with the given full path doesn't exist
+// find or create a file on the mounted partition given the full file path (e.g. /myfile.cpp) and access mode ('r'ead, 'w'rite + read, 'a'ppend + read), return the file position in the root directory
+// +   read and append will fail if the file with the given full path doesn't exist
 // +   write will try to open a file before writing to it if the file doesn't exist
 MFS KFS::createFile_uc(const char* filepath, char mode, Traversal& t)
 {
     // if the partition isn't formatted, return an error code
     if( !formatted ) return MFS_ERROR;
     // if the opening of new files is forbidden, return an error code
-    if( prevent_open ) return MFS_ERROR;
+    if( prevent_open ) return MFS_NOK;
     // if the selected mode isn't recognized, return an error code
-    if( mode != 'r' || mode != 'w' || mode != 'a' ) return MFS_ERROR;
+    if( mode != 'r' || mode != 'w' || mode != 'a' ) return MFS_BADARGS;
     // if the filepath is invalid, return an error code
-    if( isFullPathValid_uc(filepath) != MFS_OK ) return MFS_ERROR;
+    if( isFullPathValid_uc(filepath) != MFS_OK ) return MFS_BADARGS;
 
-    // 
+    // create a traversal object
     Traversal t;
-    // 
-    MFS status;
+
+    // check if the file with the given path exists on the partition
+    findFile_uc(filepath, t);
+
+    // if there was an error during the search, return an error code
+    if( t.status < 0 ) return MFS_ERROR;
     
-    // 
-    status = fileExists_uc(filepath, t);
-    // 
-    if( status < 0 ) return MFS_ERROR;
-    // 
-    if( mode != 'w' ) return status;
+    // if the file access mode was 'r'ead or 'a'ppend, return if the file exists (return if the search was successful)
+    if( mode != 'w' ) return t.status;
 
-    //
-    if( status == MFS_OK && truncateFile_uc(t) != MFS_OK ) return MFS_ERROR;
+    // the access mode from this point on is 'w'rite (because of the previous if)
 
-    // 
-    status = fileExists_uc(".", t);
-    // 
-    if( status < 0 ) return MFS_ERROR;
-
-    // 
-    if( status == MFS_NOK )
+    // if the search is successful (the file with the given full file path has been found)
+    if( t.status == MFS_OK )
     {
-        uns32 alloccnt = (t.idx2 == nullidx32) + (t.idx3 == nullidx32);
-        if( t.idx2 == nullblk )
-        {
-        }
+        // if the file truncation was successful, return the success code, otherwise return an error code
+        return (truncateFile_uc(t, 0) == MFS_OK) ? MFS_OK : MFS_ERROR;
     }
 
+    // since the file doesn't exist in the root directory, try to create it
+
+
+    // TODO: dovrsiti
     
 
-    // 
+    // return that the file creation was successful
     return MFS_OK;
 }
 
@@ -767,14 +1004,14 @@ MFS KFS::deleteFile_uc(const char* filepath)
     // if the partition isn't formatted, return an error code
     if( !formatted ) return MFS_ERROR;
     // if the filepath is invalid, return an error code
-    if( isFullPathValid_uc(filepath) != MFS_OK ) return MFS_ERROR;
+    if( isFullPathValid_uc(filepath) != MFS_OK ) return MFS_BADARGS;
 
     Traversal t;
-    MFS status = fileExists_uc(filepath, t);
+    MFS status = findFile_uc(filepath, t);
     if( status != MFS_OK && status != MFS_NOK ) return MFS_ERROR;
     if( status == MFS_NOK ) return MFS_OK;
     
-    
+    // TODO: popraviti
 
     return MFS_OK;
 }
@@ -790,13 +1027,13 @@ MFS32 KFS::readFromFile_uc(Traversal& t, siz32 pos, siz32 count, Buffer buffer)
 
 // write the requested number of bytes from the buffer into the file starting from the given position
 // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
-MFS KFS::writeToFile_uc(Traversal& t, siz32 count, const Buffer buffer)
+MFS KFS::writeToFile_uc(Traversal& t, siz32 pos, siz32 count, const Buffer buffer)
 {
     // TODO: napraviti
 }
 
 // throw away the file's contents starting from the given position until the end of the file (but keep the file descriptor in the filesystem)
-MFS KFS::truncateFile_uc(Traversal& t)
+MFS KFS::truncateFile_uc(Traversal& t, siz32 pos)
 {
     // TODO: napraviti
 }

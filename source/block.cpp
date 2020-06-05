@@ -120,7 +120,7 @@ void DirectoryBlock::init()
 {
     // free every file descriptor in the directory block
     for( idx32 i = 0; i < Size; i++ )
-        filedesc[i].free();
+        filedesc[i].release();
 }
 
 // print directory block to output stream

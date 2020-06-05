@@ -18,12 +18,13 @@ private:
     friend class KFS;
 
 private:
+    std::thread::id tid;
     std::string filepath { };
     char mode { '\0' };
     idx32 pos { 0 };
 
     idx32 locDIRE { nullblk };
-    idx32 idx3 { nullidx32 };
+    idx32 entDIRE { nullidx32 };
 
     std::mutex mutex_open;
     siz32 mutex_open_cnt { 0 };
@@ -31,7 +32,10 @@ private:
 private:
     // construct the file object
     // only the filesystem can construct the file object
-    KFile();
+    KFile() { mutex_open.lock(); }
+
+    // initialize the kernel file variables
+    void init();
 
 public:
     // destruct the file object
