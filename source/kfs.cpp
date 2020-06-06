@@ -1041,7 +1041,7 @@ KFileHandle KFS::openFileHandle_uc(const char* filepath, char mode)
 MFS KFS::closeFileHandle_uc(KFileHandle& handle)
 {
     // if the handle is empty, return an error code
-    if( !handle ) return MFS_ERROR;
+    if( !handle ) return MFS_BADARGS;
 
     // if there are no threads waiting for access to the file, remove the file handle from the open file table
     if( handle->mutex_open_cnt == 0 )
@@ -1120,14 +1120,27 @@ MFS KFS::deleteFile_uc(const char* filepath)
     // if the filepath is invalid, return an error code
     if( isFullPathValid_uc(filepath) != MFS_OK ) return MFS_BADARGS;
 
+    // create a traversal path
     Traversal t;
-    MFS status = findFile_uc(filepath, t);
-    if( status != MFS_OK && status != MFS_NOK ) return MFS_ERROR;
-    if( status == MFS_NOK ) return MFS_OK;
-    
-    // TODO: popraviti
+    // try to find a file with the given path
+    t.status = findFile_uc(filepath, t);
 
-    return MFS_OK;
+    // if the search encountered an error, return the operation status
+    if( t.status < 0 ) return t.status;
+    // if a file with the given path doesn't exist, return that the delete was successful
+    if( t.status == MFS_NOK ) return t.status = MFS_OK;
+
+    // try to truncate the file, if the operation isn't successful return its status
+    if( ( t.status = truncateFile_uc(t, 0) ) != MFS_OK ) return t.status;
+
+    // try to free the file descriptor in the root directory, if the operation isn't successful return its status
+    if( ( t.status = freeFileDesc_uc(t) ) != MFS_OK ) return t.status;
+    
+    // decrease the partition file count
+    filecnt--;
+
+    // return that the operation was successful
+    return t.status = MFS_OK;
 }
 
 
