@@ -103,8 +103,8 @@ constexpr siz32 FileExtSize  = 3+1;   // maximum length of file extension in byt
 constexpr siz32 FullFileNameSize = FileNameSize-1 + 1 + FileExtSize;   // maximum length of filename + '.' + file extension in bytes (including '\0')
 
 // characters with special meaning
-const char special_char[special_char_cnt] = { '\\', '/', ':', '*', '?', '"', '<', '>', '|', '\0' };
-const siz32 special_char_cnt = 10;
+constexpr siz32 special_char_cnt = 10;
+constexpr char special_char[special_char_cnt] = { '\\', '/', ':', '*', '?', '"', '<', '>', '|', '\0' };
 
 
 
@@ -128,8 +128,8 @@ constexpr siz32 FileSizeS = FileSizeT +                         DataBlkSize;   /
 constexpr siz32 FileSizeM = FileSizeS +             IndxBlkSize*DataBlkSize;   // medium file size
 constexpr siz32 FileSizeL = FileSizeM + IndxBlkSize*IndxBlkSize*DataBlkSize;   // large  file size
 
-constexpr siz32 FileSizeLim[FileSizeLimCount] = { FileSizeT, FileSizeS, FileSizeM, FileSizeL };   // file size limit array
 constexpr siz32 FileSizeLimCount = 4;                                                             // number of elements in file size limit array
+constexpr siz32 FileSizeLim[FileSizeLimCount] = { FileSizeT, FileSizeS, FileSizeM, FileSizeL };   // file size limit array
 
 
 

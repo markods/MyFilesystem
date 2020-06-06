@@ -9,66 +9,8 @@
 #include "block.h"
 #include "partition.h"
 #include "kfile.h"
-
-
-// initialize the traversal to start from the first entry in the given block, and also set the number of blocks on the traversal path
-void KFS::Traversal::init(idx32 StartBlkLocation, siz32 depth)
-{
-    // initialize the locations and entry indexes to all invalid values
-    for( idx32 i = 0; i < MaxDepth; i++ )
-    {
-        loc[i] = nullblk;
-        ent[i] = nullidx32;
-    }
-
-    // set the starting block location, and set its entry index to point to the the first entry in the block
-    loc[depth] = StartBlkLocation;
-    ent[depth] = 0;
-
-    // set the depth to the given value
-    this->depth = depth;
-
-    // reset the number of files scanned during the traversal
-    filesScanned = 0;
-
-    // reset the traversal status
-    status = MFS_ERROR;
-}
-
-// recalculate the depth of the traversal path using the location array
-siz32 KFS::Traversal::recalcDepth()
-{
-    // reset the traversal path depth
-    depth = 0;
-
-    // depth calculation examples:
-    //   + not nullblk
-    //   - nullblk
-    // ====================
-    // loc array      depth
-    // [ -  -  - ]    0
-    // [ +  -  - ]    1
-    // [ -  +  - ]    2
-    // [ +  +  - ]    2
-    // [ -  -  + ]    3
-    // [ -  +  + ]    3
-    // [ +  -  + ]    impossible (the array of + must be contiguous if the traversal is valid)
-    // [ +  +  + ]    3
-
-
-    // for all the location entries in the array
-    for( idx32 idx = 0;  idx < MaxDepth;  idx++ )
-    {
-        // if the current location points to a valid block, set its depth as the depth of the traversal (+1 since depth 0 means that the traversal path is empty -- contains no blocks)
-        if( loc[idx] != nullblk ) depth = idx + 1;
-    }
-
-    // return the traversal path depth
-    return depth;
-}
-
-
-
+#include "fd.h"
+#include "traversal.h"
 
 
 // _____________________________________________________________________________________________________________________________________________
@@ -131,7 +73,7 @@ KFS::~KFS()
     // TODO: proveriti da li se svi bool-ovi koriste unutar kfs i kfile!
 
     // TODO: proveriti da li se file handle treba okruziti sa std::atomic<>
-    //       promeniti destruktor file handle-a tako da poziva closeFileHandle_uc
+    //       promeniti destruktor file handle-a tako da poziva closeFile_uc
 
 }
 
@@ -336,6 +278,7 @@ MFS KFS::fileExists(const char* filepath)
 KFileHandle KFS::openFile(const char* filepath, char mode)
 {
     // TODO: napraviti
+    return nullptr;
 }
 
 // close a file with the given full file path (e.g. /myfile.cpp)
@@ -343,6 +286,7 @@ KFileHandle KFS::openFile(const char* filepath, char mode)
 MFS KFS::closeFile(KFileHandle& handle)
 {
     // TODO: napraviti
+    return MFS_OK;
 }
 
 // delete a file on the mounted partition given the fill file path (e.g. /myfile.cpp)
@@ -350,6 +294,7 @@ MFS KFS::closeFile(KFileHandle& handle)
 MFS KFS::deleteFile(const char* filepath)
 {
     // TODO: napraviti
+    return MFS_OK;
 }
 
 
@@ -359,6 +304,7 @@ MFS KFS::deleteFile(const char* filepath)
 MFS32 KFS::readFromFile(KFileHandle& handle, siz32 count, Buffer buffer)
 {
     // TODO: napraviti
+    return 0;
 }
 
 // write the requested number of bytes from the buffer into the file starting from the seek position
@@ -366,12 +312,14 @@ MFS32 KFS::readFromFile(KFileHandle& handle, siz32 count, Buffer buffer)
 MFS KFS::writeToFile(KFileHandle& handle, siz32 count, Buffer buffer)
 {
     // TODO: napraviti
+    return MFS_OK;
 }
 
 // throw away the file's contents starting from the seek position until the end of the file (but keep the file descriptor in the filesystem)
 MFS KFS::truncateFile(KFileHandle& handle)
 {
     // TODO: napraviti
+    return MFS_OK;
 }
 
 
@@ -758,8 +706,6 @@ MFS KFS::freeFileDesc_uc(Traversal& t)
 
             // save that the file descriptor was removed
             filedesc_removed = true;
-            // decrease the partition file count
-            filecnt--;
 
             // if the first file descriptor is taken, then the directory block shouldn't be deallocated, skip the next bit of code
             if( BLOCK.dire.filedesc[0].isTaken() ) break;
@@ -1009,16 +955,16 @@ MFS KFS::findFile_uc(const char* filepath, Traversal& t)
 
 
 
-// open a file handle on the mounted partition with the given full file path (e.g. /myfile.cpp) and mode ('r'ead, read + 'w'rite, read + 'a'ppend)
-KFileHandle KFS::openFileHandle_uc(const char* filepath, char mode)
+// open a file on the mounted partition with the given full file path (e.g. /myfile.cpp) and mode ('r'ead, read + 'w'rite, read + 'a'ppend)
+KFileHandle KFS::openFile_uc(const char* filepath, char mode)
 {
-    // if the partition isn't formatted, return an error code
+    // if the partition isn't formatted, return nullptr
     if( !formatted ) return nullptr;
-    // if the opening of new files is forbidden, return an error code
+    // if the opening of new files is forbidden, return nullptr
     if( prevent_open ) return nullptr;
-    // if the selected mode isn't recognized, return an error code
+    // if the selected mode isn't recognized, return nullptr
     if( mode != 'r' || mode != 'w' || mode != 'a' ) return nullptr;
-    // if the filepath is invalid, return an error code
+    // if the filepath is invalid, return nullptr
     if( isFullPathValid_uc(filepath) != MFS_OK ) return nullptr;
 
     // create a string from the full file path char array
@@ -1029,19 +975,33 @@ KFileHandle KFS::openFileHandle_uc(const char* filepath, char mode)
 
     // get the file handle with the (string) path
     KFileHandle handle { open_files[path] };
-    // initialize the file handle
-    // TODO: inicijalizovati file handle
-    handle->mode = mode;
+
+    // create a traversal path
+    Traversal t;
+    // create a file descriptor
+    FileDescriptor fd;
+
+    // find or create a file on the partition, if the operation isn't successful close the file handle and return nullptr
+    if( ( t.status = createFile_uc(filepath, mode, t, fd) ) != MFS_OK )
+    {
+        // close the file handle
+        closeFile_uc(handle);
+        // return nullptr
+        return nullptr;
+    }
+
+    // initialize the file handle with the data from the file descriptor and mode
+    handle->init(t, fd, mode);
 
     // return the handle
     return handle;
 }
 
-// close a file handle with the given full file path (e.g. /myfile.cpp)
-MFS KFS::closeFileHandle_uc(KFileHandle& handle)
+// close a file with the given full file path (e.g. /myfile.cpp)
+MFS KFS::closeFile_uc(KFileHandle& handle)
 {
-    // if the handle is empty, return an error code
-    if( !handle ) return MFS_BADARGS;
+    // if the handle is empty, return that the operation is successful
+    if( !handle ) return MFS_OK;
 
     // if there are no threads waiting for access to the file, remove the file handle from the open file table
     if( handle->mutex_open_cnt == 0 )
@@ -1070,8 +1030,6 @@ MFS KFS::createFile_uc(const char* filepath, char mode, Traversal& t, FileDescri
     // if the filepath is invalid, return an error code
     if( isFullPathValid_uc(filepath) != MFS_OK ) return MFS_BADARGS;
 
-    // create a traversal object
-    Traversal t;
     // check if the file with the given path exists on the partition, if there was an error during the search, return an error code
     if( ( t.status = findFile_uc(filepath, t) ) < 0 ) return MFS_ERROR;
     // if the file access mode was 'r'ead or 'a'ppend, return if the file exists (return if the search was successful)
@@ -1150,6 +1108,7 @@ MFS KFS::deleteFile_uc(const char* filepath)
 MFS32 KFS::readFromFile_uc(Traversal& t, siz32 pos, siz32 count, Buffer buffer)
 {
     // TODO: napraviti
+    return 0;
 }
 
 // write the requested number of bytes from the buffer into the file starting from the given position
@@ -1157,12 +1116,14 @@ MFS32 KFS::readFromFile_uc(Traversal& t, siz32 pos, siz32 count, Buffer buffer)
 MFS KFS::writeToFile_uc(Traversal& t, siz32 pos, siz32 count, const Buffer buffer)
 {
     // TODO: napraviti
+    return MFS_OK;
 }
 
 // throw away the file's contents starting from the given position until the end of the file (but keep the file descriptor in the filesystem)
 MFS KFS::truncateFile_uc(Traversal& t, siz32 pos)
 {
     // TODO: napraviti
+    return MFS_OK;
 }
 
 

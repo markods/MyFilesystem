@@ -10,6 +10,7 @@
 #include "!global.h"
 
 
+// structure that represents a file descriptor in the filesystem
 struct FileDescriptor
 {
 private:

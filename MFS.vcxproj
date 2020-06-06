@@ -30,6 +30,7 @@
     <ClInclude Include="headers\kfile.h" />
     <ClInclude Include="headers\kfs.h" />
     <ClInclude Include="headers\partition.h" />
+    <ClInclude Include="headers\traversal.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="source\block.cpp" />
@@ -41,6 +42,7 @@
     <ClCompile Include="source\kfile.cpp" />
     <ClCompile Include="source\kfs.cpp" />
     <ClCompile Include="source\main.cpp" />
+    <ClCompile Include="source\traversal.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>15.0</VCProjectVersion>

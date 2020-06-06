@@ -8,6 +8,8 @@
 #pragma once
 #include "!global.h"
 #include <mutex>
+struct Traversal;
+struct FileDescriptor;
 
 
 // kernel's implementation of a file
@@ -35,12 +37,12 @@ private:
     KFile() { mutex_open.lock(); }
 
     // initialize the kernel file variables
-    void init();
+    void init(Traversal& t, FileDescriptor& fd, char mode) {}
 
 public:
     // destruct the file object
     // close the file handle, but don't delete the file in the filesystem!
-    ~KFile();
+    ~KFile() {}
 
     // read the requested number of bytes from the file (starting from the previous seek position) into the given buffer
     // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
@@ -58,7 +60,7 @@ public:
     // get the current seek position
     MFS32 seekPos();
     // check if the seek position is at the end of the file (there are no more bytes left to be read)
-    MFS   isEof();
+    MFS isEof();
     // get the file size (in bytes)
     MFS32 size();
 };

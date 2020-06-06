@@ -15,6 +15,8 @@
 class Partition;
 class KFile;
 using KFileHandle = std::shared_ptr<KFile>;
+struct FileDescriptor;
+struct Traversal;
 
 
 // kernel's implementation of a filesystem
@@ -24,26 +26,6 @@ using KFileHandle = std::shared_ptr<KFile>;
 // +   otherwise it could happen that a thread is using a deleted object (since we can't guarantee that the thread that called the destructor gets woken up last)
 class KFS
 {
-private:
-    // class used to represent a traversal position inside the root directory/file
-    struct Traversal
-    {
-        // blocks:            DIRE/DATA  INDX2      INDX1
-        // array indexes:     iBLOCK     iINDX2     iINDX1
-        idx32 loc[MaxDepth] { nullblk,   nullblk,   nullblk   };   // locations of the          directory/data block (loc[0]) and index blocks (loc[1], loc[2])
-        idx32 ent[MaxDepth] { nullidx32, nullidx32, nullidx32 };   // index of entry inside the directory/data block (ent[0]) and index blocks (ent[1], ent[2])
-        siz32 depth { 0 };                                         // number of blocks on the traversal path before reaching useful data (number of used array elements in the above arrays)
-
-        siz32 filesScanned { 0 };     // number of files scanned during traversal
-        siz32 status { MFS_ERROR };   // status of the traversal
-
-        // initialize the traversal to start from the first entry in the given block, and also set the number of blocks on the traversal path
-        void init(idx32 StartBlockLocation, siz32 depth);
-
-        // recalculate the depth of the traversal path using the location array
-        siz32 recalcDepth();
-    };
-
 private:
     Partition* part { nullptr };        // pointer to the mounted partition
     siz32 filecnt { nullsiz32 };        // cached number of files on the partition (instead of looking through the entire partition for files to count, take this cached copy)
@@ -146,10 +128,10 @@ private:
     // ""      -- count the number of files in the root directory (by matching a nonexistent file)
     MFS findFile_uc(const char* filepath, Traversal& t);
 
-    // open a file handle on the mounted partition with the given full file path (e.g. /myfile.cpp) and mode ('r'ead, read + 'w'rite, read + 'a'ppend)
-    KFileHandle openFileHandle_uc(const char* filepath, char mode);
-    // close a file handle with the given full file path (e.g. /myfile.cpp)
-    MFS closeFileHandle_uc(KFileHandle& handle);
+    // open a file on the mounted partition with the given full file path (e.g. /myfile.cpp) and mode ('r'ead, read + 'w'rite, read + 'a'ppend)
+    KFileHandle openFile_uc(const char* filepath, char mode);
+    // close a file with the given full file path (e.g. /myfile.cpp)
+    MFS closeFile_uc(KFileHandle& handle);
 
     // find or create a file on the mounted partition given the full file path (e.g. /myfile.cpp) and access mode ('r'ead, 'w'rite + read, 'a'ppend + read), return the file position in the root directory and the file descriptor
     // +   read and append will fail if the file with the given full path doesn't exist
