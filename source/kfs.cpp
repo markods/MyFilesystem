@@ -586,7 +586,7 @@ MFS KFS::freeBlocks_uc(const std::vector<idx32>& ids)
 
 
 // find or allocate a free file descriptor in the root directory, return its traversal position
-MFS KFS::alocFd_uc(Traversal& t)
+MFS KFS::alocFileDesc_uc(Traversal& t)
 {
     // try to find an empty file descriptor in the root directory
     findFile_uc(".", t);
@@ -602,11 +602,8 @@ MFS KFS::alocFd_uc(Traversal& t)
     // vector for holding newly allocated block ids
     std::vector<idx32> ids;
 
-    // try to allocate blocks for empty file descriptors
-    t.status = alocBlocks_uc(MaxDepth - t.depth, ids);
-
-    // if the allocation wasn't successful return its status
-    if( t.status != MFS_OK ) return t.status;
+    // try to allocate blocks for empty file descriptors, if the allocation wasn't successful return its status
+    if( ( t.status = alocBlocks_uc(MaxDepth - t.depth, ids) ) != MFS_OK ) return t.status;
 
     // create blocks for holding the level 1 root index, current level 2 root index and the current root directory block
     Block INDX1, INDX2, BLOCK;
@@ -714,10 +711,123 @@ MFS KFS::alocFd_uc(Traversal& t)
     return ( ( t.status = freeBlocks_uc(ids) ) == MFS_OK ) ? MFS_NOK : MFS_ERROR;
 }
 
-// deallocate the file descriptor with the given traversal position in the root directory, compact index and directory block entries if requested
-MFS KFS::freeFd_uc(Traversal& t, bool compact)
+// free the file descriptor with the given traversal position in the root directory, and compact index and directory block entries afterwards (possibly deallocate them if they are empty)
+MFS KFS::freeFileDesc_uc(Traversal& t)
 {
-    // TODO: napraviti
+    // if a previous operation wasn't successful, return an error code
+    if( t.status != MFS_OK ) return MFS_BADARGS;
+
+    // create an array of three padded blocks
+    PaddedBlock paddedINDX1, paddedINDX2, paddedBLOCK;
+    // create references to the block part of the padded blocks
+    // the blocks will hold the root directory's level1 index block, one of its level2 index blocks and one of its directory blocks during the traversal
+    Block& INDX1 { paddedINDX1.block };
+    Block& INDX2 { paddedINDX2.block };
+    Block& BLOCK { paddedBLOCK.block };
+    // initialize the paddings in the padded blocks
+    paddedINDX1.pad.entry = nullblk;
+    paddedINDX2.pad.entry = nullblk;
+    paddedBLOCK.pad.filedesc.release();
+
+    // vector for holding block ids that should be deallocated
+    std::vector<idx32> ids;
+
+    // bool that tells if the file descriptor has been removed
+    bool filedesc_removed = false;
+
+
+    // a do-while loop that always executes once (used because of the breaks -- if there was no loop surrounding the inner code, the code would be really messy)
+    do
+    {
+        // FIXME: the next section of code should be a for loop (0..MaxDepth-1) instead of the unrolled loop we currently see
+
+        // process the root directory block
+        {
+            // read the directory block from the partition, if the read fails skip the next bit of code
+            if( (t.status = cache.readFromPart(part, t.loc[iBLOCK], BLOCK)) != MFS_OK ) break;
+
+            // for every non-empty file descriptor after the one that's being removed
+            for( idx32 idx = t.ent[iBLOCK] + 1;   BLOCK.dire.filedesc[idx].isTaken();   idx++ )
+            {
+                // overwrite the previous file descriptor with the current one
+                BLOCK.dire.filedesc[idx-1] = BLOCK.dire.filedesc[idx];
+            }
+
+            // if the block write to the partition failed, skip the next bit of code
+            if( (t.status = cache.writeToPart(part, t.loc[iBLOCK], BLOCK)) != MFS_OK ) break;
+
+            // save that the file descriptor was removed
+            filedesc_removed = true;
+            // decrease the partition file count
+            filecnt--;
+
+            // if the first file descriptor is taken, then the directory block shouldn't be deallocated, skip the next bit of code
+            if( BLOCK.dire.filedesc[0].isTaken() ) break;
+        }
+
+        // process the level 2 root index block
+        {
+            // read the level 2 index block from the partition, if the read fails skip the next bit of code
+            if( (t.status = cache.readFromPart(part, t.loc[iINDX2], INDX2)) != MFS_OK ) break;
+
+            // for every non-empty entry after the one that's being removed
+            for( idx32 idx = t.ent[iINDX2] + 1; INDX2.indx.entry[idx] != nullblk; idx++ )
+            {
+                // overwrite the previous entry with the current one
+                INDX2.indx.entry[idx-1] = INDX2.indx.entry[idx];
+            }
+
+            // if the block write to the partition failed, skip the next bit of code
+            if( (t.status = cache.writeToPart(part, t.loc[iINDX2], INDX2)) != MFS_OK ) break;
+
+            // since the directory block deallocation is necessary, save the id of the block to be deallocated in the block ids array
+            ids.push_back(t.loc[iBLOCK]);
+            // reset the location of the directory block in the traversal
+            t.loc[iBLOCK] = nullblk;
+            // reset the directory entry index in the traversal
+            t.ent[iBLOCK] = DirectoryBlock::Size;
+
+            // if the first entry is taken, then the level 2 index block shouldn't be deallocated, skip the next bit of code
+            if( INDX2.indx.entry[0] != nullblk ) break;
+        }
+
+        // process the level 1 root index block
+        {
+            // read the level 1 index block from the partition, if the read fails skip the next bit of code
+            if( (t.status = cache.readFromPart(part, t.loc[iINDX1], INDX1)) != MFS_OK ) break;
+
+            // for every non-empty entry after the one that's being removed
+            for( idx32 idx = t.ent[iINDX1] + 1; INDX1.indx.entry[idx] != nullblk; idx++ )
+            {
+                // overwrite the previous entry with the current one
+                INDX1.indx.entry[idx-1] = INDX1.indx.entry[idx];
+            }
+
+            // if the block write to the partition failed, skip the next bit of code
+            if( (t.status = cache.writeToPart(part, t.loc[iINDX1], INDX1)) != MFS_OK ) break;
+
+            // since the level 2 index block deallocation is necessary, save the id of the block to be deallocated in the block ids array
+            ids.push_back(t.loc[iINDX2]);
+            // reset the location of the level 2 index block in the traversal
+            t.loc[iINDX2] = nullblk;
+            // reset the level 2 (index block) entry index in the traversal
+            t.ent[iINDX2] = DirectoryBlock::Size;
+        }
+
+    // end of do-while loop that executes always once
+    } while( false );
+
+    // try to deallocate blocks that are empty
+    // FIXME: if this deallocation fails, the filesystem is corrupt
+    //        currently there is no way to guarantee atomicity of all filesystem operations, since journalling isn't implemented
+    //        therefore we permanently lose one or two blocks on the partition :(
+    t.status = freeBlocks_uc(ids);
+
+    // if the file descriptor was removed, then the operation is successful (even though the empty block deallocation could have failed, the root directory isn't corrupt, what is corrupt is the bit vector)
+    if( filedesc_removed ) t.status = MFS_OK;
+
+    // return the status of the operation
+    return t.status;
 }
 
 
@@ -819,13 +929,6 @@ MFS KFS::findFile_uc(const char* filepath, Traversal& t)
     bool find_empty_fd = (special == MFS_OK) && (filepath[0] == '\0');
 
 
-    // a padded block has an empty entry immediately after the block, which will be initialized with the default value for that block type
-    struct PaddedBlock
-    {
-        Block block;                                    // the actual block with useful data
-        union { idx32 indx; FileDescriptor fd; } pad;   // empty entry that should be default initialized
-    };
-
     // create an array of three padded blocks
     PaddedBlock paddedINDX1, paddedINDX2, paddedDIRE;
     // create references to the block part of the padded blocks
@@ -834,9 +937,9 @@ MFS KFS::findFile_uc(const char* filepath, Traversal& t)
     Block& INDX2 { paddedINDX2.block };
     Block& DIRE  { paddedDIRE .block };
     // initialize the paddings in the padded blocks
-    paddedINDX1.pad.indx = nullblk;
-    paddedINDX2.pad.indx = nullblk;
-    paddedDIRE .pad.fd.setFullName("*");   // an invalid filename
+    paddedINDX1.pad.entry = nullblk;
+    paddedINDX2.pad.entry = nullblk;
+    paddedDIRE .pad.filedesc.setFullName("*");   // an invalid filename
 
     // start the traversal from the beginning of the root directory index1 block
     t.init(RootIndx1Location, MaxDepth);
@@ -953,10 +1056,10 @@ MFS KFS::closeFileHandle_uc(KFileHandle& handle)
 
 
 
-// find or create a file on the mounted partition given the full file path (e.g. /myfile.cpp) and access mode ('r'ead, 'w'rite + read, 'a'ppend + read), return the file position in the root directory
+// find or create a file on the mounted partition given the full file path (e.g. /myfile.cpp) and access mode ('r'ead, 'w'rite + read, 'a'ppend + read), return the file position in the root directory and the file descriptor
 // +   read and append will fail if the file with the given full path doesn't exist
 // +   write will try to open a file before writing to it if the file doesn't exist
-MFS KFS::createFile_uc(const char* filepath, char mode, Traversal& t)
+MFS KFS::createFile_uc(const char* filepath, char mode, Traversal& t, FileDescriptor& fd)
 {
     // if the partition isn't formatted, return an error code
     if( !formatted ) return MFS_ERROR;
@@ -969,13 +1072,8 @@ MFS KFS::createFile_uc(const char* filepath, char mode, Traversal& t)
 
     // create a traversal object
     Traversal t;
-
-    // check if the file with the given path exists on the partition
-    findFile_uc(filepath, t);
-
-    // if there was an error during the search, return an error code
-    if( t.status < 0 ) return MFS_ERROR;
-    
+    // check if the file with the given path exists on the partition, if there was an error during the search, return an error code
+    if( ( t.status = findFile_uc(filepath, t) ) < 0 ) return MFS_ERROR;
     // if the file access mode was 'r'ead or 'a'ppend, return if the file exists (return if the search was successful)
     if( mode != 'w' ) return t.status;
 
@@ -985,14 +1083,30 @@ MFS KFS::createFile_uc(const char* filepath, char mode, Traversal& t)
     if( t.status == MFS_OK )
     {
         // if the file truncation was successful, return the success code, otherwise return an error code
-        return (truncateFile_uc(t, 0) == MFS_OK) ? MFS_OK : MFS_ERROR;
+        return ( ( t.status = truncateFile_uc(t, 0) ) == MFS_OK) ? MFS_OK : MFS_ERROR;
     }
 
-    // since the file doesn't exist in the root directory, try to create it
+    // since the file doesn't exist in the root directory, try to allocate an empty file descriptor
+    // if the empty file descriptor allocation was unsuccessful, return the operation status
+    if( ( t.status = alocFileDesc_uc(t) ) != MFS_OK ) return t.status;
 
+    // create an empty block that will hold the root directory block with the empty file descriptor
+    Block DIRE;
 
-    // TODO: dovrsiti
-    
+    // if the read of the directory block is unsuccessful, return the operation status
+    if( ( t.status = cache.readFromPart(part, t.loc[iBLOCK], DIRE) ) != MFS_OK ) return t.status;
+
+    // reserve the empty file descriptor inside the block (initialize it with the file name as well)
+    DIRE.dire.filedesc[t.ent[iBLOCK]].reserve(&filepath[1]);
+
+    // if the write of the directory block is unsuccessful, return the operation status
+    if( (t.status = cache.writeToPart(part, t.loc[iBLOCK], DIRE)) != MFS_OK ) return t.status;
+
+    // save the file descriptor into the given variable
+    fd = DIRE.dire.filedesc[t.ent[iBLOCK]];
+
+    // increase the partition file count
+    filecnt++;
 
     // return that the file creation was successful
     return MFS_OK;

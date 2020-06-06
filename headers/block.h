@@ -128,3 +128,17 @@ union Block
 };
 
 
+// a padded block has an empty entry immediately after the block, which should be initialized with the default value for that block type
+struct PaddedBlock
+{
+    Block block;   // the actual block with useful data
+    union {
+        uns8  byte;
+        idx32 entry;
+        FileDescriptor filedesc;
+        uns8  bits;
+    } pad;         // empty entry that should be default initialized
+};
+
+
+

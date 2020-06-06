@@ -127,9 +127,9 @@ private:
     MFS freeBlocks_uc(const std::vector<idx32>& ids);
 
     // find or allocate a free file descriptor in the root directory, return its traversal position
-    MFS alocFd_uc(Traversal& t);
-    // deallocate the file descriptor with the given traversal position in the root directory, compact index and directory block entries if requested
-    MFS freeFd_uc(Traversal& t, bool compact = false);
+    MFS alocFileDesc_uc(Traversal& t);
+    // free the file descriptor with the given traversal position in the root directory, and compact index and directory block entries afterwards (possibly deallocate them if they are empty)
+    MFS freeFileDesc_uc(Traversal& t);
 
     // check if the root full file path is valid (e.g. /myfile.cpp)
     static MFS isFullPathValid_uc(const char* filepath);
@@ -151,10 +151,10 @@ private:
     // close a file handle with the given full file path (e.g. /myfile.cpp)
     MFS closeFileHandle_uc(KFileHandle& handle);
 
-    // find or create a file on the mounted partition given the full file path (e.g. /myfile.cpp) and access mode ('r'ead, 'w'rite + read, 'a'ppend + read), return the file position in the root directory
+    // find or create a file on the mounted partition given the full file path (e.g. /myfile.cpp) and access mode ('r'ead, 'w'rite + read, 'a'ppend + read), return the file position in the root directory and the file descriptor
     // +   read and append will fail if the file with the given full path doesn't exist
     // +   write will try to open a file before writing to it if the file doesn't exist
-    MFS createFile_uc(const char* filepath, char mode, Traversal& t);
+    MFS createFile_uc(const char* filepath, char mode, Traversal& t, FileDescriptor& fd);
     // delete a file on the mounted partition given the full file path (e.g. /myfile.cpp)
     MFS deleteFile_uc(const char* filepath);
 
