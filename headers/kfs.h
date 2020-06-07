@@ -12,9 +12,8 @@
 #include <unordered_map>
 #include "!global.h"
 #include "cache.h"
+#include "kfile.h"
 class Partition;
-class KFile;
-using KFileHandle = std::shared_ptr<KFile>;
 struct FileDescriptor;
 struct Traversal;
 
@@ -37,7 +36,7 @@ private:
     // filesystem block cache, used for faster access to disk
     Cache cache { InitialCacheSize };
     // global open file table, maps a file path to a corresponding shared file instance
-    std::unordered_map< std::string, KFileHandle > open_files;
+    std::unordered_map< std::string, KFile::Handle > open_files;
 
     std::mutex mutex_excl;               // mutex used for exclusive access to the filesystem class
     std::mutex mutex_part_unmounted;     // mutex used for signalling partition unmount events
@@ -72,26 +71,26 @@ public:
     // check if a file exists in the root directory on the mounted partition, if it does return the index of the directory block containing its file descriptor
     MFS fileExists(const char* filepath);
 
-    // wait until no one uses the file with the given filepath
+    // wait until no one uses the file with the given full file path
     // open a file on the mounted partition with the given full file path (e.g. /myfile.cpp) and access mode ('r'ead, 'w'rite + read, 'a'ppend + read)
     // +   read and append fail if the file with the given full path doesn't exist
     // +   write will try to create a file before writing to it if the file doesn't exist
-    KFileHandle openFile(const char* filepath, char mode);
+    KFile::Handle openFile(const char* filepath, char mode);
     // close a file with the given full file path (e.g. /myfile.cpp)
     // wake up a single thread that waited to open the now closed file
-    MFS closeFile(KFileHandle& handle);
-    // delete a file on the mounted partition given the fill file path (e.g. /myfile.cpp)
+    MFS closeFile(const char* filepath);
+    // delete a file on the mounted partition given the full file path (e.g. /myfile.cpp)
     // the delete will succeed only if the file is not being used by a thread (isn't open)
     MFS deleteFile(const char* filepath);
 
-    // read up to the requested number of bytes from the file starting from the seek position into the given buffer, return the number of bytes read
+    // read up to the requested number of bytes from the file starting from the seek position into the given buffer, return the number of bytes read (also update the seek position)
     // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
-    MFS32 readFromFile(KFileHandle& handle, siz32 count, Buffer buffer);
-    // write the requested number of bytes from the buffer into the file starting from the seek position
+    MFS32 readFromFile(KFile& file, siz32 count, Buffer buffer);
+    // write the requested number of bytes from the buffer into the file starting from the seek position (also update the seek position)
     // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
-    MFS writeToFile(KFileHandle& handle, siz32 count, const Buffer buffer);
+    MFS writeToFile(KFile& file, siz32 count, const Buffer buffer);
     // throw away the file's contents starting from the seek position until the end of the file (but keep the file descriptor in the filesystem)
-    MFS truncateFile(KFileHandle& handle);
+    MFS truncateFile(KFile& file);
 
 
 // ====== thread-unsafe methods ======
@@ -129,9 +128,12 @@ private:
     MFS findFile_uc(const char* filepath, Traversal& t);
 
     // open a file on the mounted partition with the given full file path (e.g. /myfile.cpp) and mode ('r'ead, read + 'w'rite, read + 'a'ppend)
-    KFileHandle openFile_uc(const char* filepath, char mode);
-    // close a file with the given full file path (e.g. /myfile.cpp)
-    MFS closeFile_uc(KFileHandle& handle);
+    // return the file's handle with the mode unchanged if it already exists, otherwise initialize it
+    KFile::Handle openFileHandle_uc(const char* filepath, char mode);
+    // get a file handle for the file with the given full file path from the filesystem open file table
+    KFile::Handle getFileHandle_uc(const char* filepath);
+    // close a file handle with the given full file path
+    MFS closeFileHandle_uc(const char* filepath);
 
     // find or create a file on the mounted partition given the full file path (e.g. /myfile.cpp) and access mode ('r'ead, 'w'rite + read, 'a'ppend + read), return the file position in the root directory and the file descriptor
     // +   read and append will fail if the file with the given full path doesn't exist

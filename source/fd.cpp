@@ -32,7 +32,7 @@ void FileDescriptor::release()
     filesize = 0;      // resetting filesize to zero
 
     // resetting first eight bytes of file
-    for( uns32 i = 0; i < FileSizeS; i++ ) byte[i] = 0;
+    for( uns32 i = 0; i < FileSizeT; i++ ) byte[i] = 0;
 }
 
 
@@ -41,12 +41,13 @@ void FileDescriptor::release()
 bool FileDescriptor::isFree() { return (fname[0] == '\0' && fext[0] == '\0'); }
 // check if the file descriptor is taken
 bool FileDescriptor::isTaken() { return (fname[0] != '\0' || fext[0] != '\0'); }
-// get the depth of the file structure (depends on the file size)
-siz32 FileDescriptor::getDepth() { return (filesize > FileSizeT) + (filesize > FileSizeS) + (filesize > FileSizeM); }
 
 
 
-// return if the full filename is valid according to the file descriptor specification
+// get the depth of the file structure depending on the given file size
+siz32 FileDescriptor::getDepth(siz32 filesize) { return (filesize > FileSizeT) + (filesize > FileSizeS) + (filesize > FileSizeM); }
+
+// check if the full filename is valid according to the file descriptor specification
 MFS FileDescriptor::isFullNameValid(const char* str)
 {
     // return if the given string is nullptr

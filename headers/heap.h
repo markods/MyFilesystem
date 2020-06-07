@@ -25,7 +25,7 @@ template<typename T> class Heap
 {
 private:
     static const siz64 initcap = (1ULL<<3);   // initial heap capacity
-    T nullelem;   // dummy element, returned if the requested element doesn't exist
+    T nullelem {};   // dummy element, returned if the requested element doesn't exist
 
 private:
     T* elem;     // array of heap elements

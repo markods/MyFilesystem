@@ -13,55 +13,69 @@ struct FileDescriptor;
 
 
 // kernel's implementation of a file
-// TODO: opisati klasu bolje
+// all the public methods in this class are thread safe
 class KFile
 {
 private:
+    // the filesystem class uses some of the variables in this class directly
     friend class KFS;
 
-private:
-    std::thread::id tid;
-    std::string filepath { };
-    char mode { '\0' };
-    idx32 pos { 0 };
-
-    idx32 locDIRE { nullblk };
-    idx32 entDIRE { nullidx32 };
-
-    std::mutex mutex_open;
-    siz32 mutex_open_cnt { 0 };
+public:
+    // handle that is used to access the kernel file exclusively by multiple threads
+    using Handle = std::shared_ptr<KFile>;
 
 private:
-    // construct the file object
-    // only the filesystem can construct the file object
-    KFile() { mutex_open.lock(); }
+    char filepath[1 + FullFileNameSize]; // absolute path of the file (in the root directory)
+    char mode { '\0' };                  // access mode ('r'ead, 'w'rite + read, 'a'ppend + read)
+    siz32 filesize { 0 };                // size of the file in bytes
+    idx32 seekpos { 0 };                 // seek position (pointer to the file contents, used in reads and writes + appends)
 
-    // initialize the kernel file variables
-    void init(Traversal& t, FileDescriptor& fd, char mode) {}
+    idx32 locDIRE { nullblk };           // location of the directory block in which the file descriptor is located in
+    idx32 entDIRE { nullidx32 };         // index of the entry in the directory block that holds the file descriptor for this file
+
+    std::mutex mutex_file_closed;        // mutex used for signalling that the file (handle) has been closed by a thread
+    siz32 mutex_file_closed_cnt { 0 };   // number of threads waiting for the file closed event
+
+
+// ====== thread-safe public interface ======
+private:
+    // construct the file object, only the filesystem can create a file
+    KFile(Traversal& t, FileDescriptor& fd);
 
 public:
-    // destruct the file object
-    // close the file handle, but don't delete the file in the filesystem!
-    ~KFile() {}
+    // destruct the file object -- close the file handle, but don't delete the file from the filesystem!
+    ~KFile();
 
-    // read the requested number of bytes from the file (starting from the previous seek position) into the given buffer
+    // read up to the requested number of bytes from the file starting from the seek position into the given buffer, return the number of bytes read (also update the seek position)
     // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
-    // updates the file seek position
     MFS32 read(siz32 count, Buffer buffer);
-    // write the requested number of bytes from the buffer into the file (starting from the given position)
+    // write the requested number of bytes from the buffer into the file starting from the seek position (also update the seek position)
     // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
-    // updates the file seek position
     MFS write(siz32 count, Buffer buffer);
-    // set the file seek position to the requested position
-    MFS seek(idx32 position);
-    // truncate the file -- throw away its contents from the given position, but keep the file descriptor in the filesystem
+    // throw away the file's contents starting from the seek position until the end of the file (but keep the file descriptor in the filesystem)
     MFS truncate(idx32 position);
+    // set the file seek position to the given position
+    // +   valid positions are in the range [0, filesize] (filesize included! -- used for writing to the end of the file)
+    MFS setSeekPos(idx32 position);
 
     // get the current seek position
-    MFS32 seekPos();
-    // check if the seek position is at the end of the file (there are no more bytes left to be read)
-    MFS isEof();
-    // get the file size (in bytes)
-    MFS32 size();
+    idx32 getSeekPos();
+    // check if the seek position is past the end of the file (there are no more bytes left to be read)
+    bool isEof();
+    // get the file size in bytes
+    siz32 getSize();
+
+
+// ====== thread-unsafe methods ======
+private:
+    // reserve access to the file with the given mode (so that other threads cannot use the file before it is released)
+    MFS reserveAccess_uc(char mode);
+    // release access to the file (so that other threads can use the file)
+    void releaseAccess_uc();
+
+    // check if the file is reserved
+    bool isReserved_uc();
+    // get the depth of the file structure based on the file size
+    siz32 getDepth_uc();
 };
 

@@ -41,10 +41,10 @@ public:
     bool isFree();
     // check if the file descriptor is taken
     bool isTaken();
-    // get the depth of the file structure (depends on the file size)
-    siz32 getDepth();
 
-    // return if the full filename is valid according to the file descriptor specification
+    // get the depth of the file structure (depends on the file size)
+    static siz32 getDepth(siz32 filesize);
+    // check if the full filename is valid according to the file descriptor specification
     static MFS isFullNameValid(const char* fname);
 
     // copy filename and extension into given char buffer (minimal length of buffer is FullFileNameSize)

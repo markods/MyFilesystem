@@ -8,7 +8,6 @@
 #include "kfs.h"
 #include "block.h"
 #include "partition.h"
-#include "kfile.h"
 #include "fd.h"
 #include "traversal.h"
 
@@ -46,7 +45,7 @@ KFS::~KFS()
         // wait for the all files closed event
         mutex_all_files_closed.lock();
 
-        // the thread only reaches this point when some other thread unmounted the partition
+        // the thread only reaches this point when some other thread wakes this thread up
         // the other thread didn't release its exclusive access, which means that this thread continues with exclusive access (transfered implicitly by the other thread)
 
         // decrease the number of threads waiting for the all files closed event
@@ -70,10 +69,13 @@ KFS::~KFS()
     // TODO: napraviti thread koji periodicno zove flush kesa! (koristiti std::thread)
     //       poslati all files closed event unutar file close funkcije
 
-    // TODO: proveriti da li se svi bool-ovi koriste unutar kfs i kfile!
-
     // TODO: proveriti da li se file handle treba okruziti sa std::atomic<>
-    //       promeniti destruktor file handle-a tako da poziva closeFile_uc
+    //       promeniti destruktor file handle-a tako da poziva closeFileHandle_uc
+
+    // TODO: napraviti da je kfs singleton
+
+    // TODO: obavezno na kraju proveriti sinhronizaciju
+    //       proveriti da li se svi bool-ovi koriste unutar kfs i kfile!
 
 }
 
@@ -99,7 +101,7 @@ MFS KFS::mount(Partition* partition)
         // wait for the partition unmount event
         mutex_part_unmounted.lock();
 
-        // the thread only reaches this point when some other thread unmounted the partition
+        // the thread only reaches this point when some other thread wakes this thread up
         // the other thread didn't release its exclusive access, which means that this thread continues with exclusive access (transfered implicitly by the other thread)
 
         // decrease the number of threads waiting for unmount event
@@ -127,6 +129,9 @@ MFS KFS::unmount()
     // obtain exclusive access to the filesystem class instance
     mutex_excl.lock();
 
+    // prevent the opening of new files
+    prevent_open = true;
+
     // loop until the blocking condition is false
     // if there is already a mounted partition and there are open files, make this thread wait until all the files on it are closed
     while( part != nullptr && !open_files.empty() )
@@ -140,7 +145,7 @@ MFS KFS::unmount()
         // wait for the all files closed event
         mutex_all_files_closed.lock();
 
-        // the thread only reaches this point when some other thread unmounted the partition
+        // the thread only reaches this point when some other thread wakes this thread up
         // the other thread didn't release its exclusive access, which means that this thread continues with exclusive access (transfered implicitly by the other thread)
 
         // decrease the number of threads waiting for the all files closed event
@@ -150,12 +155,16 @@ MFS KFS::unmount()
     // unconditionally unmount the given partition
     MFS status = unmount_uc();
 
+    // remove the file opening prevention policy
+    prevent_open = false;
+
     // if there are threads waiting for the unmount event, unblock one of them
     if( mutex_part_unmounted_cnt > 0 )
     {
         // send an unmount event
         mutex_part_unmounted.unlock();
     }
+    // otherwise
     else
     {
         // release exclusive access
@@ -189,7 +198,7 @@ MFS KFS::format()
         // wait for the all files closed event
         mutex_all_files_closed.lock();
 
-        // the thread only reaches this point when some other thread unmounted the partition
+        // the thread only reaches this point when some other thread wakes this thread up
         // the other thread didn't release its exclusive access, which means that this thread continues with exclusive access (transfered implicitly by the other thread)
 
         // decrease the number of threads waiting for the all files closed event
@@ -252,12 +261,16 @@ MFS32 KFS::getRootFileCount()
 // check if a file exists in the root directory on the mounted partition, if it does return the index of the directory block containing its file descriptor
 MFS KFS::fileExists(const char* filepath)
 {
+    // if the full file path is invalid, return an error code
+    if( isFullPathValid_uc(filepath) != MFS_OK ) return MFS_BADARGS;
+
     // obtain exclusive access to the filesystem class instance
     mutex_excl.lock();
 
-    // unconditionally check if the file exists (the traversal position is not needed)
+    // create a traversal path
     Traversal t;
-    MFS status = findFile_uc(filepath, t);
+    // unconditionally check if the file exists (the traversal position is not needed)
+    MFS32 status = findFile_uc(filepath, t);
 
     // release exclusive access
     mutex_excl.unlock();
@@ -271,52 +284,154 @@ MFS KFS::fileExists(const char* filepath)
 
 
 
-// wait until no one uses the file with the given filepath
+// wait until no one uses the file with the given full file path
 // open a file on the mounted partition with the given full file path (e.g. /myfile.cpp) and access mode ('r'ead, 'w'rite + read, 'a'ppend + read)
 // +   read and append fail if the file with the given full path doesn't exist
 // +   write will try to create a file before writing to it if the file doesn't exist
-KFileHandle KFS::openFile(const char* filepath, char mode)
+KFile::Handle KFS::openFile(const char* filepath, char mode)
 {
-    // TODO: napraviti
-    return nullptr;
+    // obtain exclusive access to the filesystem class instance
+    mutex_excl.lock();
+
+    // TODO: serious problem -- this function will truncate the file if the mode is 'w', but the thread hasn't yet checked if it has exclusive access to the file descriptor!!!
+
+    // unconditionally try open a file handle
+    KFile::Handle handle = openFileHandle_uc(filepath, mode);
+
+    // if the handle couldn't be opened
+    if( !handle )
+    {
+        // release exclusive access
+        mutex_excl.unlock();
+        // return nullptr
+        return nullptr;
+    }
+
+    // loop until the blocking condition is false
+    // if there is already a thread using the file, make this thread wait until the file is closed
+    while( handle->isReserved_uc() )
+    {
+        // increase the number of threads waiting for the file closed event
+        handle->mutex_file_closed_cnt++;
+
+        // release the exclusive access mutex
+        mutex_excl.unlock();
+
+        // wait for the file closed event
+        handle->mutex_file_closed.lock();
+
+        // the thread only reaches this point when some other thread wakes this thread up
+        // the other thread didn't release its exclusive access, which means that this thread continues with exclusive access (transfered implicitly by the other thread)
+
+        // decrease the number of threads waiting for the file closed event
+        handle->mutex_file_closed_cnt--;
+    }
+
+    // reserve the file handle with the given access mode
+    handle->reserveAccess_uc(mode);
+
+    // release exclusive access
+    mutex_excl.unlock();
+
+    // at this point this thread doesn't have exclusive access to the filesystem class
+    // so it shouldn't do anything thread-unsafe (e.g. read the filesystem class state, ...)
+
+    // return the file handle
+    return handle;
 }
 
 // close a file with the given full file path (e.g. /myfile.cpp)
 // wake up a single thread that waited to open the now closed file
-MFS KFS::closeFile(KFileHandle& handle)
+MFS KFS::closeFile(const char* filepath)
 {
-    // TODO: napraviti
-    return MFS_OK;
+    // obtain exclusive access to the filesystem class instance
+    mutex_excl.lock();
+
+    // unconditionally try to close the file
+    MFS32 status = closeFileHandle_uc(filepath);
+
+    // find a file handle with the given path in the open file table
+    KFile::Handle handle { getFileHandle_uc(filepath) };
+
+    // if the <opening of new files is forbidden>, <there are currently no open files in the open file table> and <there are threads waiting for the all files closed event>, then unblock one of them
+    if( prevent_open && open_files.empty() && mutex_all_files_closed_cnt > 0 )
+    {
+        // send an all files closed event
+        mutex_all_files_closed.unlock();
+    }
+    // if the <opening of new files is forbidden> and <there are threads waiting for the file closed event>, then unblock one of them
+    else if( !prevent_open && handle && handle->mutex_file_closed_cnt > 0 )
+    {
+        // send a file closed event
+        handle->mutex_file_closed.unlock();
+    }
+    // otherwise
+    else
+    {
+        // release exclusive access
+        mutex_excl.unlock();
+    }
+
+    // at this point this thread doesn't have exclusive access to the filesystem class
+    // so it shouldn't do anything thread-unsafe (e.g. read the filesystem class state, ...)
+
+    // return the operation status
+    return status;
 }
 
-// delete a file on the mounted partition given the fill file path (e.g. /myfile.cpp)
+// delete a file on the mounted partition given the full file path (e.g. /myfile.cpp)
 // the delete will succeed only if the file is not being used by a thread (isn't open)
 MFS KFS::deleteFile(const char* filepath)
 {
-    // TODO: napraviti
-    return MFS_OK;
+    // obtain exclusive access to the filesystem class instance
+    mutex_excl.lock();
+
+    // find a file handle with the given path in the open file table
+    KFile::Handle handle { getFileHandle_uc(filepath) };
+
+    // if the handle is not empty, then there must be a thread using it
+    if( handle )
+    {
+        // release exclusive access
+        mutex_excl.unlock();
+
+        // return an error code
+        return MFS_ERROR;
+    }
+
+    // unconditionally try to delete the file
+    MFS32 status = deleteFile_uc(filepath);
+
+    // release exclusive access
+    mutex_excl.unlock();
+
+    // at this point this thread doesn't have exclusive access to the filesystem class
+    // so it shouldn't do anything thread-unsafe (e.g. read the filesystem class state, ...)
+
+    // return the operation status
+    return status;
 }
 
 
 
-// read up to the requested number of bytes from the file starting from the seek position into the given buffer, return the number of bytes read
+// read up to the requested number of bytes from the file starting from the seek position into the given buffer, return the number of bytes read (also update the seek position)
 // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
-MFS32 KFS::readFromFile(KFileHandle& handle, siz32 count, Buffer buffer)
+MFS32 KFS::readFromFile(KFile& file, siz32 count, Buffer buffer)
 {
     // TODO: napraviti
     return 0;
 }
 
-// write the requested number of bytes from the buffer into the file starting from the seek position
+// write the requested number of bytes from the buffer into the file starting from the seek position (also update the seek position)
 // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
-MFS KFS::writeToFile(KFileHandle& handle, siz32 count, Buffer buffer)
+MFS KFS::writeToFile(KFile& file, siz32 count, Buffer buffer)
 {
     // TODO: napraviti
     return MFS_OK;
 }
 
 // throw away the file's contents starting from the seek position until the end of the file (but keep the file descriptor in the filesystem)
-MFS KFS::truncateFile(KFileHandle& handle)
+MFS KFS::truncateFile(KFile& file)
 {
     // TODO: napraviti
     return MFS_OK;
@@ -707,6 +822,24 @@ MFS KFS::freeFileDesc_uc(Traversal& t)
             // save that the file descriptor was removed
             filedesc_removed = true;
 
+            // char buffer for holding the full file path
+            char filepath[1 + FullFileNameSize];
+            // add the forward slash to make the path absolute (hack, but works since there is only one directory -- the root directory /)
+            filepath[0] = '/';
+
+            // for every non-empty file descriptor after the one that was removed
+            for( idx32 idx = t.ent[iBLOCK]; BLOCK.dire.filedesc[idx].isTaken(); idx++ )
+            {
+                // overwrite the full file name after the forward slash in the file path
+                BLOCK.dire.filedesc[idx].getFullName(&filepath[1]);
+                
+                // get a file handle with the exact file path
+                KFile::Handle handle { getFileHandle_uc(filepath) };
+
+                // if the file handle exists, update its entry index to match the position of the file descriptor in the directory block
+                if( handle ) handle->entDIRE = idx;
+            }
+
             // if the first file descriptor is taken, then the directory block shouldn't be deallocated, skip the next bit of code
             if( BLOCK.dire.filedesc[0].isTaken() ) break;
         }
@@ -864,7 +997,7 @@ MFS KFS::findFile_uc(const char* filepath, Traversal& t)
     if( !formatted ) return MFS_ERROR;
 
     // create variables that tell if the full file path is valid or a special character
-    MFS valid, special;
+    MFS valid = MFS_NOK, special = MFS_NOK;
 
     // if the full file path is invalid and not a special character, return an error code
     if( ( valid   = isFullPathValid_uc  (filepath) ) != MFS_OK
@@ -956,57 +1089,71 @@ MFS KFS::findFile_uc(const char* filepath, Traversal& t)
 
 
 // open a file on the mounted partition with the given full file path (e.g. /myfile.cpp) and mode ('r'ead, read + 'w'rite, read + 'a'ppend)
-KFileHandle KFS::openFile_uc(const char* filepath, char mode)
+// return the file's handle with the mode unchanged if it already exists, otherwise initialize it
+KFile::Handle KFS::openFileHandle_uc(const char* filepath, char mode)
 {
     // if the partition isn't formatted, return nullptr
     if( !formatted ) return nullptr;
     // if the opening of new files is forbidden, return nullptr
     if( prevent_open ) return nullptr;
     // if the selected mode isn't recognized, return nullptr
-    if( mode != 'r' || mode != 'w' || mode != 'a' ) return nullptr;
+    if( mode != 'r' && mode != 'w' && mode != 'a' ) return nullptr;
     // if the filepath is invalid, return nullptr
     if( isFullPathValid_uc(filepath) != MFS_OK ) return nullptr;
 
     // create a string from the full file path char array
     std::string path { filepath };
-    // if a handle with the (newly created string) path doesn't exist, create it
-    if( open_files.find(path) == open_files.cend() )
-        open_files[path] = KFileHandle { new KFile() };
 
-    // get the file handle with the (string) path
-    KFileHandle handle { open_files[path] };
+    // get a file handle from the open file table, for the file with the given path
+    KFile::Handle handle = getFileHandle_uc(filepath);
+
+    // if the handle exists, return it
+    if( handle ) return handle;
 
     // create a traversal path
     Traversal t;
     // create a file descriptor
     FileDescriptor fd;
 
-    // find or create a file on the partition, if the operation isn't successful close the file handle and return nullptr
-    if( ( t.status = createFile_uc(filepath, mode, t, fd) ) != MFS_OK )
-    {
-        // close the file handle
-        closeFile_uc(handle);
-        // return nullptr
-        return nullptr;
-    }
+    // find or create a file on the partition, if the operation isn't successful return nullptr
+    if( (t.status = createFile_uc(filepath, mode, t, fd)) != MFS_OK ) return nullptr;
 
-    // initialize the file handle with the data from the file descriptor and mode
-    handle->init(t, fd, mode);
+    // make a file handle for the file with the given path
+    handle = KFile::Handle { new KFile(t, fd) };
+
+    // add it to the open file table
+    open_files[path] = handle;
 
     // return the handle
     return handle;
 }
 
-// close a file with the given full file path (e.g. /myfile.cpp)
-MFS KFS::closeFile_uc(KFileHandle& handle)
+// get a file handle for the file with the given full file path from the filesystem open file table
+KFile::Handle KFS::getFileHandle_uc(const char* filepath)
 {
+    // create a string from the full file path char array
+    std::string path { filepath };
+
+    // get the iterator to the file handle with the given filepath in the open file table
+    auto el = open_files.find(path);
+    // if the (key, value) tuple exists (if the iterator is not at the cend() location), return its second element -- value
+    return (el != open_files.cend()) ? el->second : nullptr;
+}
+
+// close a file handle with the given full file path
+MFS KFS::closeFileHandle_uc(const char* filepath)
+{
+    // find a file handle with the given path in the filesystem open file table
+    KFile::Handle handle { getFileHandle_uc(filepath) };
     // if the handle is empty, return that the operation is successful
     if( !handle ) return MFS_OK;
 
+    // release the thread's exclusive access to the handle, so that other threads can use it
+    handle->releaseAccess_uc();
+
     // if there are no threads waiting for access to the file, remove the file handle from the open file table
-    if( handle->mutex_open_cnt == 0 )
-        open_files.erase(handle->filepath);
-    
+    if( handle->mutex_file_closed_cnt == 0 ) open_files.erase(handle->filepath);
+
     // close the file handle
     handle.reset();
 
@@ -1026,7 +1173,7 @@ MFS KFS::createFile_uc(const char* filepath, char mode, Traversal& t, FileDescri
     // if the opening of new files is forbidden, return an error code
     if( prevent_open ) return MFS_NOK;
     // if the selected mode isn't recognized, return an error code
-    if( mode != 'r' || mode != 'w' || mode != 'a' ) return MFS_BADARGS;
+    if( mode != 'r' && mode != 'w' && mode != 'a' ) return MFS_BADARGS;
     // if the filepath is invalid, return an error code
     if( isFullPathValid_uc(filepath) != MFS_OK ) return MFS_BADARGS;
 
@@ -1054,7 +1201,7 @@ MFS KFS::createFile_uc(const char* filepath, char mode, Traversal& t, FileDescri
     // if the read of the directory block is unsuccessful, return the operation status
     if( ( t.status = cache.readFromPart(part, t.loc[iBLOCK], DIRE) ) != MFS_OK ) return t.status;
 
-    // reserve the empty file descriptor inside the block (initialize it with the file name as well)
+    // reserve the empty file descriptor inside the block (initialize it with the full file name as well)
     DIRE.dire.filedesc[t.ent[iBLOCK]].reserve(&filepath[1]);
 
     // if the write of the directory block is unsuccessful, return the operation status

@@ -22,6 +22,7 @@ CacheSlot::CacheSlot(idx32 _slotidx)
 {
     // set slot index
     slotidx = _slotidx;
+    // TODO: ovde code analysis kaze da status i block id nisu inicijalizovani?
     // initialize slot to its default values
     init();
 }
