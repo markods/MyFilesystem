@@ -48,11 +48,16 @@ private:
 
 // ====== thread-safe public interface ======
 public:
+    // get an instance to the filesystem class
+    static KFS& instance();
+
+private:
     // construct the filesystem
     KFS();
     // destruct the filesystem
     ~KFS();
 
+public:
     // wait until there is no mounted partition
     // mount the partition into the filesystem (which has a maximum of one mounted partition at any time)
     MFS mount(Partition* partition);

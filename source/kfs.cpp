@@ -17,6 +17,20 @@
 // _____________________________________________________________________________________________________________________________________________
 // THREAD.SAFE.PUBLIC.INTERFACE...THREAD.SAFE.PUBLIC.INTERFACE...THREAD.SAFE.PUBLIC.INTERFACE...THREAD.SAFE.PUBLIC.INTERFACE...THREAD.SAFE.PUBLI
 
+
+// get an instance to the filesystem class
+KFS& KFS::instance()
+{
+    // C++11 §6.7 [stmt.dcl] p4
+    // If control enters the declaration concurrently while the variable is being initialized, the concurrent execution shall wait for completion of the initialization.
+
+    // create a static variable
+    static KFS instance;
+
+    // return it
+    return instance;
+}
+
 // construct the filesystem
 KFS::KFS()
 {
@@ -72,11 +86,10 @@ KFS::~KFS()
     // TODO: proveriti da li se file handle treba okruziti sa std::atomic<>
     //       promeniti destruktor file handle-a tako da poziva closeFileHandle_uc
 
-    // TODO: napraviti da je kfs singleton
-
     // TODO: obavezno na kraju proveriti sinhronizaciju
     //       proveriti da li se svi bool-ovi koriste unutar kfs i kfile!
 
+    // TODO: proveriti da li treba koristiti negde memory barijere!
 }
 
 
@@ -293,23 +306,12 @@ KFile::Handle KFS::openFile(const char* filepath, char mode)
     // obtain exclusive access to the filesystem class instance
     mutex_excl.lock();
 
-    // TODO: serious problem -- this function will truncate the file if the mode is 'w', but the thread hasn't yet checked if it has exclusive access to the file descriptor!!!
-
-    // unconditionally try open a file handle
-    KFile::Handle handle = openFileHandle_uc(filepath, mode);
-
-    // if the handle couldn't be opened
-    if( !handle )
-    {
-        // release exclusive access
-        mutex_excl.unlock();
-        // return nullptr
-        return nullptr;
-    }
+    // unconditionally try to get a file handle from the open file table
+    KFile::Handle handle = { getFileHandle_uc(filepath) };
 
     // loop until the blocking condition is false
     // if there is already a thread using the file, make this thread wait until the file is closed
-    while( handle->isReserved_uc() )
+    while( handle && handle->isReserved_uc() )
     {
         // increase the number of threads waiting for the file closed event
         handle->mutex_file_closed_cnt++;
@@ -325,6 +327,18 @@ KFile::Handle KFS::openFile(const char* filepath, char mode)
 
         // decrease the number of threads waiting for the file closed event
         handle->mutex_file_closed_cnt--;
+    }
+
+    // unconditionally try to open a file handle
+    handle = openFileHandle_uc(filepath, mode);
+
+    // if the handle couldn't be opened
+    if( !handle )
+    {
+        // release exclusive access
+        mutex_excl.unlock();
+        // return nullptr
+        return nullptr;
     }
 
     // reserve the file handle with the given access mode
@@ -359,7 +373,7 @@ MFS KFS::closeFile(const char* filepath)
         // send an all files closed event
         mutex_all_files_closed.unlock();
     }
-    // if the <opening of new files is forbidden> and <there are threads waiting for the file closed event>, then unblock one of them
+    // if the <opening of new files is not forbidden> and <there are threads waiting for the file closed event>, then unblock one of them
     else if( !prevent_open && handle && handle->mutex_file_closed_cnt > 0 )
     {
         // send a file closed event

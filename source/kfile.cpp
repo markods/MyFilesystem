@@ -8,6 +8,7 @@
 #include "kfile.h"
 #include "traversal.h"
 #include "fd.h"
+#include "kfs.h"
 
 
 // _____________________________________________________________________________________________________________________________________________
@@ -38,7 +39,8 @@ KFile::KFile(Traversal& t, FileDescriptor& fd)
 // destruct the file object -- close the file handle, but don't delete the file from the filesystem!
 KFile::~KFile()
 {
-    // TODO: napraviti
+    // get an instance to the kernel filesystem class, and call its corresponding method
+    KFS::instance().closeFile(filepath);
 }
 
 
@@ -47,23 +49,23 @@ KFile::~KFile()
 // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
 MFS32 KFile::read(siz32 count, Buffer buffer)
 {
-    // TODO: napraviti
-    return MFS_OK;
+    // get an instance to the kernel filesystem class, and call its corresponding method
+    return KFS::instance().readFromFile(*this, count, buffer);
 }
 
 // write the requested number of bytes from the buffer into the file starting from the seek position (also update the seek position)
 // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
 MFS KFile::write(siz32 count, Buffer buffer)
 {
-    // TODO: napraviti
-    return MFS_OK;
+    // get an instance to the kernel filesystem class, and call its corresponding method
+    return KFS::instance().writeToFile(*this, count, buffer);
 }
 
 // throw away the file's contents starting from the seek position until the end of the file (but keep the file descriptor in the filesystem)
 MFS KFile::truncate(idx32 position)
 {
-    // TODO: napraviti
-    return MFS_OK;
+    // get an instance to the kernel filesystem class, and call its corresponding method
+    return KFS::instance().truncateFile(*this);
 }
 
 // set the file seek position to the given position
