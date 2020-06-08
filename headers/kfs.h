@@ -73,9 +73,9 @@ public:
     MFS isFormatted();
     // get the number of files in the root directory on the mounted partition
     MFS32 getRootFileCount();
+
     // check if a file exists in the root directory on the mounted partition, if it does return the index of the directory block containing its file descriptor
     MFS fileExists(const char* filepath);
-
     // wait until no one uses the file with the given full file path
     // open a file on the mounted partition with the given full file path (e.g. /myfile.cpp) and access mode ('r'ead, 'w'rite + read, 'a'ppend + read)
     // +   read and append fail if the file with the given full path doesn't exist
@@ -107,6 +107,15 @@ private:
     // format the mounted partition, if there is no mounted partition return an error
     MFS format_uc();
 
+    // check if the mounted partition is formatted
+    MFS isFormatted_uc();
+    // get the number of files in the root directory on the mounted partition
+    MFS32 getRootFileCount_uc();
+    // check if the root full file path is valid (e.g. /myfile.cpp)
+    static MFS isFullPathValid_uc(const char* filepath);
+    // check if the full file path is a special character
+    static MFS isFullPathSpecial_uc(const char* filepath);
+
     // allocate the number of requested blocks on the partition, append their ids if the allocation was successful
     MFS alocBlocks_uc(siz32 count, std::vector<idx32>& ids);
     // deallocate the blocks with the given ids from the partition, return if the deallocation was successful
@@ -117,29 +126,11 @@ private:
     // free the file descriptor with the given traversal position in the root directory, and compact index and directory block entries afterwards (possibly deallocate them if they are empty)
     MFS freeFileDesc_uc(Traversal& t);
 
-    // check if the root full file path is valid (e.g. /myfile.cpp)
-    static MFS isFullPathValid_uc(const char* filepath);
-    // check if the full file path is a special character
-    static MFS isFullPathSpecial_uc(const char* filepath);
-
-    // check if the mounted partition is formatted
-    MFS isFormatted_uc();
-    // get the number of files in the root directory on the mounted partition
-    MFS32 getRootFileCount_uc();
     // find a file descriptor with the specified path, return the traversal position and if the find is successful
     // "/file" -- find a file in the root directory
     // "."     -- find the first location where an empty file descriptor should be in the root directory
     // ""      -- count the number of files in the root directory (by matching a nonexistent file)
     MFS findFile_uc(const char* filepath, Traversal& t);
-
-    // open a file on the mounted partition with the given full file path (e.g. /myfile.cpp) and mode ('r'ead, read + 'w'rite, read + 'a'ppend)
-    // return the file's handle with the mode unchanged if it already exists, otherwise initialize it
-    KFile::Handle openFileHandle_uc(const char* filepath, char mode);
-    // get a file handle for the file with the given full file path from the filesystem open file table
-    KFile::Handle getFileHandle_uc(const char* filepath);
-    // close a file handle with the given full file path
-    MFS closeFileHandle_uc(const char* filepath);
-
     // find or create a file on the mounted partition given the full file path (e.g. /myfile.cpp) and access mode ('r'ead, 'w'rite + read, 'a'ppend + read), return the file position in the root directory and the file descriptor
     // +   read and append will fail if the file with the given full path doesn't exist
     // +   write will try to open a file before writing to it if the file doesn't exist
@@ -155,5 +146,13 @@ private:
     MFS writeToFile_uc(Traversal& t, siz32 pos, siz32 count, const Buffer buffer);
     // throw away the file's contents starting from the given position until the end of the file (but keep the file descriptor in the filesystem)
     MFS truncateFile_uc(Traversal& t, siz32 pos);
+
+    // open a file on the mounted partition with the given full file path (e.g. /myfile.cpp) and mode ('r'ead, read + 'w'rite, read + 'a'ppend)
+    // return the file's handle with the mode unchanged if it already exists, otherwise initialize it
+    KFile::Handle openFileHandle_uc(const char* filepath, char mode);
+    // get a file handle for the file with the given full file path from the filesystem open file table
+    KFile::Handle getFileHandle_uc(const char* filepath);
+    // close a file handle with the given full file path
+    MFS closeFileHandle_uc(const char* filepath);
 };
 

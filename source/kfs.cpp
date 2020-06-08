@@ -271,6 +271,8 @@ MFS32 KFS::getRootFileCount()
     return status;
 }
 
+
+
 // check if a file exists in the root directory on the mounted partition, if it does return the index of the directory block containing its file descriptor
 MFS KFS::fileExists(const char* filepath)
 {
@@ -294,8 +296,6 @@ MFS KFS::fileExists(const char* filepath)
     // return the operation status
     return status;
 }
-
-
 
 // wait until no one uses the file with the given full file path
 // open a file on the mounted partition with the given full file path (e.g. /myfile.cpp) and access mode ('r'ead, 'w'rite + read, 'a'ppend + read)
@@ -547,6 +547,80 @@ MFS KFS::format_uc()
 
 
 
+// check if the mounted partition is formatted
+MFS KFS::isFormatted_uc()
+{
+    // if the partition isn't mounted, return an error code
+    if( !part ) return MFS_ERROR;
+
+    // return if the partition is formatted
+    return (formatted) ? MFS_OK : MFS_NOK;
+}
+
+// get the number of files in the root directory on the mounted partition
+MFS32 KFS::getRootFileCount_uc()
+{
+    // if the partition isn't formatted, return an error code
+    if( !formatted ) return MFS_ERROR;
+
+    // if the filecnt isn't an invalid (uninitialized) number, return it
+    // (it is being managed by the filesystem class whenever files are added and removed)
+    if( filecnt != nullsiz32 ) return filecnt;
+
+    // create an empty traversal object
+    Traversal t;
+
+    // get the number of files in the partition (by trying to find an unmatchable file, traverse the entire root directory structure)
+    MFS status = findFile_uc("", t);
+
+    // if the traversal hasn't failed (but not catastrophically), there must be something wrong
+    if( status != MFS_NOK ) return MFS_ERROR;
+
+    // save the number of traversed files (as the file count)
+    filecnt = t.filesScanned;
+
+    // return the newly calculated file count
+    return filecnt;
+}
+
+// check if the root full file path is valid (e.g. /myfile.cpp)
+MFS KFS::isFullPathValid_uc(const char* filepath)
+{
+    // if the filepath is missing, or it isn't absolute, return an invalid status code
+    if( !filepath || filepath[0] != '/' ) return MFS_NOK;
+
+    // if the full filename is invalid, return invalid status code
+    if( FileDescriptor::isFullNameValid(&filepath[1]) != MFS_OK ) return MFS_NOK;
+
+    // return that the absolute path is valid
+    return MFS_OK;
+}
+
+// check if the full file path is a special character
+MFS KFS::isFullPathSpecial_uc(const char* filepath)
+{
+    // if the file path is missing, return an invalid status code
+    if( !filepath ) return MFS_NOK;
+
+    // create a temporary char buffer and initialize it to all null characters ('\0')
+    char str[2] = {};
+
+    // for every special character
+    for( idx32 i = 0; i < special_char_cnt; i++ )
+    {
+        // initialize the array to 
+        str[0] = special_char[i];
+
+        // if the file path matches the special character, return that the absolute path is not special
+        if( strcmp(filepath, str) == 0 ) return MFS_OK;
+    }
+
+    // return that the absolute path is not a match clause
+    return MFS_NOK;
+}
+
+
+
 // ====== block info ======
 // the directory block contains information about files present in the filesystem
 // each directory block entry holds the name of the file, its size and a pointer to the file's index blocks
@@ -573,8 +647,6 @@ MFS KFS::format_uc()
 //  k+1      not occupied      k+1      not taken
 //  …        not occupied      …        not taken
 //  last     not occupied      last     not taken
-
-
 
 // allocate the number of requested blocks on the partition, append their ids if the allocation was successful
 MFS KFS::alocBlocks_uc(siz32 count, std::vector<idx32>& ids)
@@ -925,82 +997,6 @@ MFS KFS::freeFileDesc_uc(Traversal& t)
 
 
 
-
-
-// check if the root full file path is valid (e.g. /myfile.cpp)
-MFS KFS::isFullPathValid_uc(const char* filepath)
-{
-    // if the filepath is missing, or it isn't absolute, return an invalid status code
-    if( !filepath || filepath[0] != '/' ) return MFS_NOK;
-
-    // if the full filename is invalid, return invalid status code
-    if( FileDescriptor::isFullNameValid(&filepath[1]) != MFS_OK ) return MFS_NOK;
-
-    // return that the absolute path is valid
-    return MFS_OK;
-}
-
-// check if the full file path is a special character
-MFS KFS::isFullPathSpecial_uc(const char* filepath)
-{
-    // if the file path is missing, return an invalid status code
-    if( !filepath ) return MFS_NOK;
-
-    // create a temporary char buffer and initialize it to all null characters ('\0')
-    char str[2] = {};
-
-    // for every special character
-    for( idx32 i = 0; i < special_char_cnt; i++ )
-    {
-        // initialize the array to 
-        str[0] = special_char[i];
-
-        // if the file path matches the special character, return that the absolute path is not special
-        if( strcmp(filepath, str) == 0 ) return MFS_OK;
-    }
-
-    // return that the absolute path is not a match clause
-    return MFS_NOK;
-}
-
-
-
-// check if the mounted partition is formatted
-MFS KFS::isFormatted_uc()
-{
-    // if the partition isn't mounted, return an error code
-    if( !part ) return MFS_ERROR;
-
-    // return if the partition is formatted
-    return ( formatted ) ? MFS_OK : MFS_NOK;
-}
-
-// get the number of files in the root directory on the mounted partition
-MFS32 KFS::getRootFileCount_uc()
-{
-    // if the partition isn't formatted, return an error code
-    if( !formatted ) return MFS_ERROR;
-
-    // if the filecnt isn't an invalid (uninitialized) number, return it
-    // (it is being managed by the filesystem class whenever files are added and removed)
-    if( filecnt != nullsiz32 ) return filecnt;
-
-    // create an empty traversal object
-    Traversal t;
-
-    // get the number of files in the partition (by trying to find an unmatchable file, traverse the entire root directory structure)
-    MFS status = findFile_uc("", t);
-
-    // if the traversal hasn't failed (but not catastrophically), there must be something wrong
-    if( status != MFS_NOK ) return MFS_ERROR;
-
-    // save the number of traversed files (as the file count)
-    filecnt = t.filesScanned;
-
-    // return the newly calculated file count
-    return filecnt;
-}
-
 // find a file descriptor with the specified path, return the traversal position and if the find is successful
 // "/file" -- find a file in the root directory
 // "."     -- find the first location where an empty file descriptor should be in the root directory
@@ -1020,6 +1016,197 @@ MFS KFS::findFile_uc(const char* filepath, Traversal& t)
 
     // bool that says if the search is for the first location where an empty file descriptor should be
     bool find_empty_fd = (special == MFS_OK) && (filepath[0] == '\0');
+
+
+    // create an array of three padded blocks
+    PaddedBlock paddedINDX1, paddedINDX2, paddedDIRE;
+    // create references to the block part of the padded blocks
+    // the blocks will hold the root directory's level1 index block, one of its level2 index blocks and one of its directory blocks during the traversal
+    Block& INDX1 { paddedINDX1.block };
+    Block& INDX2 { paddedINDX2.block };
+    Block& DIRE  { paddedDIRE .block };
+    // initialize the paddings in the padded blocks
+    paddedINDX1.pad.entry = nullblk;
+    paddedINDX2.pad.entry = nullblk;
+    paddedDIRE .pad.filedesc.setFullName("*");   // an invalid filename
+
+    // start the traversal from the beginning of the root directory index1 block
+    t.init(RootIndx1Location, MaxDepth);
+
+    // set the status of the search
+    t.status = MFS_NOK;
+
+
+    // start the search
+
+    // if the root directory's index1 block couldn't be read, remember that an error occured
+    if( cache.readFromPart(part, t.loc[iINDX1], INDX1) != MFS_OK ) t.status = MFS_ERROR;
+
+    // for every entry in the root directory's index1 block
+    for( t.ent[iINDX1] = 0;   t.status == MFS_NOK;   t.ent[iINDX1]++ )
+    {
+        // if the entry doesn't point to a valid index2 block
+        if( (t.loc[iINDX2] = INDX1.indx.entry[t.ent[iINDX1]]) == nullblk )
+        {
+            // if the search is for an empty file descriptor, set the status as not found (since the file descriptor hasn't been allocated)
+            if( find_empty_fd ) t.status = MFS_NOK;
+            // return to the previous level of the traversal
+            break;
+        }
+
+        // if the current index2 block couldn't be read, remember that an error occured
+        if( cache.readFromPart(part, t.loc[iINDX2], INDX2) != MFS_OK ) t.status = MFS_ERROR;
+
+        // for every entry in the current index2 block
+        for( t.ent[iINDX2] = 0;   t.status == MFS_NOK;   t.ent[iINDX2]++ )
+        {
+            // if the entry doesn't point to a valid directory block
+            if( (t.loc[iBLOCK] = INDX2.indx.entry[t.ent[iINDX2]]) == nullblk )
+            {
+                // if the search is for an empty file descriptor, set the status as not found (since the file descriptor hasn't been allocated)
+                if( find_empty_fd ) t.status = MFS_NOK;
+                // return to the previous level of the traversal
+                break;
+            }
+
+            // if the current directory block couldn't be read, remember that an error occured
+            if( cache.readFromPart(part, t.loc[iBLOCK], DIRE) != MFS_OK ) t.status = MFS_ERROR;
+
+            // for every file descriptor in the current directory block
+            for( t.ent[iBLOCK] = 0;   t.status == MFS_NOK;   t.ent[iBLOCK]++ )
+            {
+                // if the given full file name matches the full file name in the file descriptor, the search is successful
+                // this comparison must be before the conditional break, because sometimes we need to match an empty file descriptor!
+                if( DIRE.dire.filedesc[t.ent[iBLOCK]].cmpFullName(&filepath[1]) == MFS_EQUAL ) t.status = MFS_OK;
+
+                // if the file descriptor is free (not taken), return to the previous level of traversal
+                if( DIRE.dire.filedesc[t.ent[iBLOCK]].isFree() ) break;
+                
+                // increase the number of scanned files (since the file descriptor is taken)
+                t.filesScanned++;
+            }
+        }
+    }
+
+
+    // recalculate the depth of the traversal
+    t.recalcDepth();
+
+    // return the status of the search
+    return t.status;
+}
+
+// find or create a file on the mounted partition given the full file path (e.g. /myfile.cpp) and access mode ('r'ead, 'w'rite + read, 'a'ppend + read), return the file position in the root directory and the file descriptor
+// +   read and append will fail if the file with the given full path doesn't exist
+// +   write will try to open a file before writing to it if the file doesn't exist
+MFS KFS::createFile_uc(const char* filepath, char mode, Traversal& t, FileDescriptor& fd)
+{
+    // if the partition isn't formatted, return an error code
+    if( !formatted ) return MFS_ERROR;
+    // if the opening of new files is forbidden, return an error code
+    if( prevent_open ) return MFS_NOK;
+    // if the selected mode isn't recognized, return an error code
+    if( mode != 'r' && mode != 'w' && mode != 'a' ) return MFS_BADARGS;
+    // if the filepath is invalid, return an error code
+    if( isFullPathValid_uc(filepath) != MFS_OK ) return MFS_BADARGS;
+
+    // check if the file with the given path exists on the partition, if there was an error during the search, return an error code
+    if( (t.status = findFile_uc(filepath, t)) < 0 ) return MFS_ERROR;
+    // if the file access mode was 'r'ead or 'a'ppend, return if the file exists (return if the search was successful)
+    if( mode != 'w' ) return t.status;
+
+    // the access mode from this point on is 'w'rite (because of the previous if)
+
+    // if the search is successful (the file with the given full file path has been found)
+    if( t.status == MFS_OK )
+    {
+        // if the file truncation was successful, return the success code, otherwise return an error code
+        return ((t.status = truncateFile_uc(t, 0)) == MFS_OK) ? MFS_OK : MFS_ERROR;
+    }
+
+    // since the file doesn't exist in the root directory, try to allocate an empty file descriptor
+    // if the empty file descriptor allocation was unsuccessful, return the operation status
+    if( (t.status = alocFileDesc_uc(t)) != MFS_OK ) return t.status;
+
+    // create an empty block that will hold the root directory block with the empty file descriptor
+    Block DIRE;
+
+    // if the read of the directory block is unsuccessful, return the operation status
+    if( (t.status = cache.readFromPart(part, t.loc[iBLOCK], DIRE)) != MFS_OK ) return t.status;
+
+    // reserve the empty file descriptor inside the block (initialize it with the full file name as well)
+    DIRE.dire.filedesc[t.ent[iBLOCK]].reserve(&filepath[1]);
+
+    // if the write of the directory block is unsuccessful, return the operation status
+    if( (t.status = cache.writeToPart(part, t.loc[iBLOCK], DIRE)) != MFS_OK ) return t.status;
+
+    // save the file descriptor into the given variable
+    fd = DIRE.dire.filedesc[t.ent[iBLOCK]];
+
+    // increase the partition file count
+    filecnt++;
+
+    // return that the file creation was successful
+    return MFS_OK;
+}
+
+// delete a file on the mounted partition given the full file path (e.g. /myfile.cpp)
+MFS KFS::deleteFile_uc(const char* filepath)
+{
+    // if the partition isn't formatted, return an error code
+    if( !formatted ) return MFS_ERROR;
+    // if the filepath is invalid, return an error code
+    if( isFullPathValid_uc(filepath) != MFS_OK ) return MFS_BADARGS;
+
+    // create a traversal path
+    Traversal t;
+    // try to find a file with the given path
+    t.status = findFile_uc(filepath, t);
+
+    // if the search encountered an error, return the operation status
+    if( t.status < 0 ) return t.status;
+    // if a file with the given path doesn't exist, return that the delete was successful
+    if( t.status == MFS_NOK ) return t.status = MFS_OK;
+
+    // try to truncate the file, if the operation isn't successful return its status
+    if( (t.status = truncateFile_uc(t, 0)) != MFS_OK ) return t.status;
+
+    // try to free the file descriptor in the root directory, if the operation isn't successful return its status
+    if( (t.status = freeFileDesc_uc(t)) != MFS_OK ) return t.status;
+
+    // decrease the partition file count
+    filecnt--;
+
+    // return that the operation was successful
+    return t.status = MFS_OK;
+}
+
+
+
+// read up to the requested number of bytes from the file starting from the given position into the given buffer, return the number of bytes read
+// the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
+MFS32 KFS::readFromFile_uc(Traversal& t, siz32 pos, siz32 count, Buffer buffer)
+{
+    // TODO: napraviti
+    return 0;
+}
+
+// write the requested number of bytes from the buffer into the file starting from the given position
+// the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
+MFS KFS::writeToFile_uc(Traversal& t, siz32 pos, siz32 count, const Buffer buffer)
+{
+    // TODO: napraviti
+    return MFS_OK;
+}
+
+// throw away the file's contents starting from the given position until the end of the file (but keep the file descriptor in the filesystem)
+MFS KFS::truncateFile_uc(Traversal& t, siz32 pos)
+{
+    // if the partition isn't formatted, return an error code
+    if( !formatted ) return MFS_ERROR;
+
+
+
 
 
     // create an array of three padded blocks
@@ -1172,118 +1359,6 @@ MFS KFS::closeFileHandle_uc(const char* filepath)
     handle.reset();
 
     // return that the handle was successfully closed
-    return MFS_OK;
-}
-
-
-
-// find or create a file on the mounted partition given the full file path (e.g. /myfile.cpp) and access mode ('r'ead, 'w'rite + read, 'a'ppend + read), return the file position in the root directory and the file descriptor
-// +   read and append will fail if the file with the given full path doesn't exist
-// +   write will try to open a file before writing to it if the file doesn't exist
-MFS KFS::createFile_uc(const char* filepath, char mode, Traversal& t, FileDescriptor& fd)
-{
-    // if the partition isn't formatted, return an error code
-    if( !formatted ) return MFS_ERROR;
-    // if the opening of new files is forbidden, return an error code
-    if( prevent_open ) return MFS_NOK;
-    // if the selected mode isn't recognized, return an error code
-    if( mode != 'r' && mode != 'w' && mode != 'a' ) return MFS_BADARGS;
-    // if the filepath is invalid, return an error code
-    if( isFullPathValid_uc(filepath) != MFS_OK ) return MFS_BADARGS;
-
-    // check if the file with the given path exists on the partition, if there was an error during the search, return an error code
-    if( ( t.status = findFile_uc(filepath, t) ) < 0 ) return MFS_ERROR;
-    // if the file access mode was 'r'ead or 'a'ppend, return if the file exists (return if the search was successful)
-    if( mode != 'w' ) return t.status;
-
-    // the access mode from this point on is 'w'rite (because of the previous if)
-
-    // if the search is successful (the file with the given full file path has been found)
-    if( t.status == MFS_OK )
-    {
-        // if the file truncation was successful, return the success code, otherwise return an error code
-        return ( ( t.status = truncateFile_uc(t, 0) ) == MFS_OK) ? MFS_OK : MFS_ERROR;
-    }
-
-    // since the file doesn't exist in the root directory, try to allocate an empty file descriptor
-    // if the empty file descriptor allocation was unsuccessful, return the operation status
-    if( ( t.status = alocFileDesc_uc(t) ) != MFS_OK ) return t.status;
-
-    // create an empty block that will hold the root directory block with the empty file descriptor
-    Block DIRE;
-
-    // if the read of the directory block is unsuccessful, return the operation status
-    if( ( t.status = cache.readFromPart(part, t.loc[iBLOCK], DIRE) ) != MFS_OK ) return t.status;
-
-    // reserve the empty file descriptor inside the block (initialize it with the full file name as well)
-    DIRE.dire.filedesc[t.ent[iBLOCK]].reserve(&filepath[1]);
-
-    // if the write of the directory block is unsuccessful, return the operation status
-    if( (t.status = cache.writeToPart(part, t.loc[iBLOCK], DIRE)) != MFS_OK ) return t.status;
-
-    // save the file descriptor into the given variable
-    fd = DIRE.dire.filedesc[t.ent[iBLOCK]];
-
-    // increase the partition file count
-    filecnt++;
-
-    // return that the file creation was successful
-    return MFS_OK;
-}
-
-// delete a file on the mounted partition given the full file path (e.g. /myfile.cpp)
-MFS KFS::deleteFile_uc(const char* filepath)
-{
-    // if the partition isn't formatted, return an error code
-    if( !formatted ) return MFS_ERROR;
-    // if the filepath is invalid, return an error code
-    if( isFullPathValid_uc(filepath) != MFS_OK ) return MFS_BADARGS;
-
-    // create a traversal path
-    Traversal t;
-    // try to find a file with the given path
-    t.status = findFile_uc(filepath, t);
-
-    // if the search encountered an error, return the operation status
-    if( t.status < 0 ) return t.status;
-    // if a file with the given path doesn't exist, return that the delete was successful
-    if( t.status == MFS_NOK ) return t.status = MFS_OK;
-
-    // try to truncate the file, if the operation isn't successful return its status
-    if( ( t.status = truncateFile_uc(t, 0) ) != MFS_OK ) return t.status;
-
-    // try to free the file descriptor in the root directory, if the operation isn't successful return its status
-    if( ( t.status = freeFileDesc_uc(t) ) != MFS_OK ) return t.status;
-    
-    // decrease the partition file count
-    filecnt--;
-
-    // return that the operation was successful
-    return t.status = MFS_OK;
-}
-
-
-
-// read up to the requested number of bytes from the file starting from the given position into the given buffer, return the number of bytes read
-// the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
-MFS32 KFS::readFromFile_uc(Traversal& t, siz32 pos, siz32 count, Buffer buffer)
-{
-    // TODO: napraviti
-    return 0;
-}
-
-// write the requested number of bytes from the buffer into the file starting from the given position
-// the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
-MFS KFS::writeToFile_uc(Traversal& t, siz32 pos, siz32 count, const Buffer buffer)
-{
-    // TODO: napraviti
-    return MFS_OK;
-}
-
-// throw away the file's contents starting from the given position until the end of the file (but keep the file descriptor in the filesystem)
-MFS KFS::truncateFile_uc(Traversal& t, siz32 pos)
-{
-    // TODO: napraviti
     return MFS_OK;
 }
 
