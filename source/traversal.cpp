@@ -19,9 +19,15 @@ void Traversal::init(idx32 StartBlkLocation, siz32 depth)
         ent[i] = nullidx32;
     }
 
-    // set the starting block location, and set its entry index to point to the the first entry in the block
-    loc[depth] = StartBlkLocation;
-    ent[depth] = 0;
+    // if the file structure depth is not zero
+    if( depth > 0 )
+    {
+        // set the starting block location
+        loc[depth-1] = StartBlkLocation;
+
+        // set its entry index to point to the the first entry in the block
+        ent[depth-1] = 0;
+    }
 
     // set the depth to the given value
     this->depth = depth;

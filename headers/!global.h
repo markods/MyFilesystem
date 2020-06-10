@@ -145,7 +145,7 @@ constexpr siz32 InitialCacheSize  = 500;   // initial filesystem cache size
 constexpr idx32 BitvLocation      = 0;     // index of the bit vector block in the partition
 constexpr idx32 RootIndx1Location = 1;     // index of the first level index block of the root directory in the partition
 constexpr idx32 BlockPoolLocation = 2;     // index of the first block in the general purpose block pool
-constexpr siz32 MaxDepth          = 3;     // number of needed blocks before the useful data is reached (inside the data/directory block)
+constexpr siz32 MaxDepth          = 3;     // max number of blocks that must be read before useful data is reached (entry inside the data/directory block)
 
 // positions in the traversal arrays
 constexpr idx32 iINDX1 = 2;     // position of the   level 1 index block info in the traversal arrays

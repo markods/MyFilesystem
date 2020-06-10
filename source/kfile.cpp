@@ -6,8 +6,6 @@
 // KFILE...KFILE...KFILE...KFILE...KFILE...KFILE...KFILE...KFILE...KFILE...KFILE...KFILE...KFILE...KFILE...KFILE...KFILE...KFILE...KFILE...KFILE
 
 #include "kfile.h"
-#include "traversal.h"
-#include "fd.h"
 #include "kfs.h"
 
 
@@ -17,20 +15,18 @@
 // THREAD.SAFE.PUBLIC.INTERFACE...THREAD.SAFE.PUBLIC.INTERFACE...THREAD.SAFE.PUBLIC.INTERFACE...THREAD.SAFE.PUBLIC.INTERFACE...THREAD.SAFE.PUBLI
 
 // construct the file object, only the filesystem can create a file
-KFile::KFile(Traversal& t, FileDescriptor& fd)
+KFile::KFile(Traversal& _fdpos, FileDescriptor& _fd)
 {
     // add the forward slash to make the path absolute (hack, but works since there is only one directory -- the root directory /)
     filepath[0] = '/';
     // overwrite the full file name after the forward slash in the file path
     fd.getFullName(&filepath[1]);
 
-    // set the file size to the one given in the file descriptor
-    filesize = fd.filesize;
+    // save the file descriptor position in the directory
+    fdpos = _fdpos;
 
-    // save the location of the directory block that holds the file descriptor for this file
-    locDIRE = t.loc[iBLOCK];
-    // save the index of the entry in the directory block that is the file descriptor for this file
-    entDIRE = t.ent[iBLOCK];
+    // save the file descriptor
+    fd = _fd;
 
     // initialize the event mutexes to locked state (so that the threads trying to access them block)
     mutex_file_closed.lock();
@@ -73,7 +69,7 @@ MFS KFile::truncate(idx32 position)
 MFS KFile::setSeekPos(idx32 position)
 {
     // if the seek position is not in the range [0, filesize], return an error code
-    if( position > filesize ) return MFS_BADARGS;
+    if( position > fd.filesize ) return MFS_BADARGS;
 
     // save the new seek position
     seekpos = position;
@@ -88,10 +84,10 @@ MFS KFile::setSeekPos(idx32 position)
 idx32 KFile::getSeekPos() { return seekpos; }
 
 // check if the seek position is past the end of the file (there are no more bytes left to be read)
-bool KFile::isEof() { return seekpos == filesize; }
+bool KFile::isEof() { return seekpos == fd.filesize; }
 
 // get the file size in bytes
-siz32 KFile::getSize() { return filesize; }
+siz32 KFile::getSize() { return fd.filesize; }
 
 
 
@@ -113,7 +109,7 @@ MFS KFile::reserveAccess_uc(char mode)
     this->mode = mode;
 
     // if the access mode is append, set the seek position at the end of the file, otherwise set it to the beginning of the file
-    if( mode == 'a' ) seekpos = filesize;
+    if( mode == 'a' ) seekpos = fd.filesize;
     else              seekpos = 0;
 
     // return that the operation was successful
@@ -132,5 +128,5 @@ bool KFile::isReserved_uc() { return mode != '\0'; }
 
 // get the depth of the file structure based on the file size
 // return the depth of the file structure (as calculated by the file descriptor class)
-siz32 KFile::getDepth_uc() { return FileDescriptor::getDepth(filesize); }
+siz32 KFile::getDepth_uc() { return fd.getDepth(); }
 

@@ -26,12 +26,12 @@ struct Traversal;
 class KFS
 {
 private:
-    Partition* part { nullptr };        // pointer to the mounted partition
-    siz32 filecnt { nullsiz32 };        // cached number of files on the partition (instead of looking through the entire partition for files to count, take this cached copy)
+    Partition* part { nullptr };         // pointer to the mounted partition
+    siz32 filecnt { nullsiz32 };         // cached number of files on the partition (instead of looking through the entire partition for files to count, take this cached copy)
 
-    bool formatted { false };           // true if the partition is formatted
-    bool prevent_open { false };        // prevent new files from being opened if true
-    bool up_for_destruction { false };  // true if the partition is up for destruction
+    bool formatted { false };            // true if the partition is formatted
+    bool prevent_open { false };         // prevent new files from being opened if true
+    bool up_for_destruction { false };   // true if the partition is up for destruction
 
     // filesystem block cache, used for faster access to disk
     Cache cache { InitialCacheSize };
@@ -41,6 +41,7 @@ private:
     std::mutex mutex_excl;               // mutex used for exclusive access to the filesystem class
     std::mutex mutex_part_unmounted;     // mutex used for signalling partition unmount events
     std::mutex mutex_all_files_closed;   // mutex used for signalling that all files are closed on a partition
+    std::mutex mutex_no_threads_waiting; // mutex used for signalling that all threads that were waiting on an event have finished
 
     siz32 mutex_part_unmounted_cnt   { 0 };   // number of threads waiting for the partition unmount event
     siz32 mutex_all_files_closed_cnt { 0 };   // number of threads waiting for the all files closed event
@@ -109,8 +110,12 @@ private:
 
     // check if the mounted partition is formatted
     MFS isFormatted_uc();
+    // check if the class instance is up for destruction
+    // if it is, wake up a single thread that is waiting on any of the events, and when there are no more threads waiting on any event wake up the one that called the destructor
+    MFS isUpForDestruction_uc();
     // get the number of files in the root directory on the mounted partition
     MFS32 getRootFileCount_uc();
+
     // check if the root full file path is valid (e.g. /myfile.cpp)
     static MFS isFullPathValid_uc(const char* filepath);
     // check if the full file path is a special character

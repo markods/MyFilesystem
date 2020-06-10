@@ -8,6 +8,7 @@
 #include <iostream>
 #include <iomanip>
 #include "fd.h"
+#include "traversal.h"
 using std::ostream;
 using std::ios_base;
 using std::setfill;
@@ -16,36 +17,6 @@ using std::left;
 using std::right;
 using std::hex;
 
-
-// reserve the file descriptor (initialize its fields)
-void FileDescriptor::reserve(const char* fname)
-{
-    release();            // reset the file descriptor
-    setFullName(fname);   // set the full filename
-}
-
-// free the file descriptor (reset file descriptor fields to their defaults)
-void FileDescriptor::release()
-{
-    resetFullName();   // clear the descriptor fields that hold the full filename
-    indx = nullblk;    // resetting multi purpose index of file to an invalid number
-    filesize = 0;      // resetting filesize to zero
-
-    // resetting first eight bytes of file
-    for( uns32 i = 0; i < FileSizeT; i++ ) byte[i] = 0;
-}
-
-
-
-// check if the file descriptor is free
-bool FileDescriptor::isFree() { return (fname[0] == '\0' && fext[0] == '\0'); }
-// check if the file descriptor is taken
-bool FileDescriptor::isTaken() { return (fname[0] != '\0' || fext[0] != '\0'); }
-
-
-
-// get the depth of the file structure depending on the given file size
-siz32 FileDescriptor::getDepth(siz32 filesize) { return (filesize > FileSizeT) + (filesize > FileSizeS) + (filesize > FileSizeM); }
 
 // check if the full filename is valid according to the file descriptor specification
 MFS FileDescriptor::isFullNameValid(const char* str)
@@ -103,6 +74,155 @@ MFS FileDescriptor::isFullNameValid(const char* str)
 
 
 
+// get the depth of the file structure given the file size
+MFS FileDescriptor::getDepth(siz32 filesize, siz32& depth)
+{
+    // if the file size is larger than the max allowed file size, return an error code
+    if( filesize > FileSizeL ) return MFS_BADARGS;
+
+    // the file's depth is exactly the number of thresholds it is greater than (for each threshold, increase the resulting depth by one)
+    depth = (filesize > FileSizeT) + (filesize > FileSizeS) + (filesize > FileSizeM);
+
+    // return that the operation was successful
+    return MFS_OK;
+}
+
+// get the number of blocks on all the the file structure levels given the file size
+MFS FileDescriptor::getBlockCount(siz32 filesize, siz32& indx1_cnt, siz32& indx2_cnt, siz32& data_cnt)
+{
+    // if the file size is larger than the max allowed file size, return an error code
+    if( filesize > FileSizeL ) return MFS_BADARGS;
+
+    // decrease the file size by the first couple of bytes that fit in the file descriptor (these bytes aren't in a data block), if the resulting value is negative, make it zero
+    data_cnt = (filesize > FileSizeT) ? filesize - FileSizeT : 0;
+    // divide by the data block size (in bytes) and round the resulting value up (to the ceiling)
+    data_cnt = (data_cnt + DataBlkSize-1) / DataBlkSize;
+
+    // divide the number of data blocks by the index2 block size and round the resulting value up (to the ceiling)
+    indx2_cnt = (data_cnt + IndxBlkSize-1) / IndxBlkSize;
+
+    // divide the number of index2 blocks by the index1 block size and round the resulting value up (to the ceiling)
+    indx1_cnt = (indx2_cnt + IndxBlkSize-1) / IndxBlkSize;
+
+    // return that the operation was successful
+    return MFS_OK;
+}
+
+// get the number of blocks to be allocated/freed when changing from the current file size to the next file size
+MFS FileDescriptor::getResizeBlockDelta(siz32 filesize_curr, siz32 filesize_next, int32& indx1_delta, int32& indx2_delta, int32& data_delta)
+{
+    // if the current or next file size is larger than the max allowed file size, return an error code
+    if( filesize_curr > FileSizeL || filesize_next > FileSizeL ) return MFS_BADARGS;
+
+    // create variables that will hold the block count per level for the current file and the next file
+    siz32 indx1_cnt_curr, indx2_cnt_curr, data_cnt_curr;
+    siz32 indx1_cnt_next, indx2_cnt_next, data_cnt_next;
+
+    // get the block count per level for the current filesize and the next filesize
+    getBlockCount(filesize_curr, indx1_cnt_curr, indx2_cnt_curr, data_cnt_curr);
+    getBlockCount(filesize_next, indx1_cnt_next, indx2_cnt_next, data_cnt_next);
+
+    // calculate the difference
+    indx1_delta = indx1_cnt_next - indx1_cnt_curr;
+    indx2_delta = indx2_cnt_next - indx2_cnt_curr;
+     data_delta =  data_cnt_next -  data_cnt_curr;
+
+    // return that the operation was successful
+    return MFS_OK;
+}
+
+
+
+// fill the entries in the traversal path pointing to the given position in the file
+MFS FileDescriptor::getEntries(siz32 pos, Traversal& f)
+{
+    // if the given position is outside the largest file size, return an error code
+    if( pos >= FileSizeL ) return f.status = MFS_BADARGS;
+
+    // create variables that will hold the block count per level for the given file position
+    siz32 indx1_cnt, indx2_cnt, data_cnt;
+
+    // get the block count per level for the given file position
+    getBlockCount(pos, indx1_cnt, indx2_cnt, data_cnt);
+
+    // set the entries' indexes in the traversal path -- if the block count for a particular level is zero, the entry index for the previous level should be invalid (since the file doesn't have that level)
+    f.ent[iINDX1] = ( indx2_cnt != 0    ) ?     (indx2_cnt-1) % IndxBlkSize : nullidx32;
+    f.ent[iINDX2] = (  data_cnt != 0    ) ?      (data_cnt-1) % IndxBlkSize : nullidx32;
+    f.ent[iBLOCK] = ( pos > FileSizeT-1 ) ? (pos - FileSizeT) % DataBlkSize : nullidx32;
+
+    // return that the operation was successful
+    return f.status = MFS_OK;
+}
+
+// make the entries in the traversal path point to the next block to the given one in the file (works for index and data block types)
+MFS FileDescriptor::getNextEntries(Traversal& f)
+{
+    // create variables that tell if the index for a specific block should be increased (the data block should be increased by default)
+    bool incBLOCK = true;
+    bool incINDX2 = false;
+    bool incINDX1 = false;
+
+
+    // if the data block index is not invalid
+    if( f.ent[iBLOCK] != nullidx32 )
+    {
+        // if the data block index should be increased, and when increased if it is greater than the data block size
+        if( incBLOCK && ++f.ent[iBLOCK] >= DataBlkSize )
+        {
+            // reset the data block index to zero
+            f.ent[iBLOCK] = 0;
+
+            // save that the index2 block index should be increased
+            incINDX2;
+        }
+    }
+    // otherwise
+    else
+    {
+        // save that the index2 block index should be increased by default
+        incINDX2;
+    }
+
+
+    // if the index2 block index is not invalid
+    if( f.ent[iINDX2] != nullidx32 )
+    {
+        // if the index2 block index should be increased, and when increased if it is greater than the index block size
+        if( incINDX2 && ++f.ent[iINDX2] >= IndxBlkSize )
+        {
+            // reset the index2 block index to zero
+            f.ent[iINDX2] = 0;
+
+            // save that the index1 block index should be increased
+            incINDX1;
+        }
+    }
+    // otherwise
+    else
+    {
+        // save that the index1 block index should be increased by default
+        incINDX1;
+    }
+
+
+    // if the index1 block index is not invalid
+    if( f.ent[iINDX1] != nullidx32 )
+    {
+        // if the index1 block index should be increased, and when increased if it is greater than the index block size
+        if( incINDX1 && ++f.ent[iINDX1] >= IndxBlkSize )
+        {
+            // the file maximum has been overshot, return an error code
+            return f.status = MFS_BADARGS;
+        }
+    }
+
+
+    // return that the operation was successful
+    return f.status = MFS_OK;
+}
+
+
+
 // copy filename and extension into given char buffer (minimal length of buffer is FullFileNameSize)
 MFS FileDescriptor::getFullName(char* buf) const
 {
@@ -151,8 +271,6 @@ MFS FileDescriptor::cmpFullName(const char* str) const
     // the filenames are identical
     return MFS_EQUAL;
 }
-
-
 
 // set filename and extension from given string (null terminated)
 MFS FileDescriptor::setFullName(const char* str)
@@ -229,6 +347,88 @@ void FileDescriptor::resetFullName()
     // clear the descriptor fields that hold the full filename       // [filename][ext]
     for( uns32 i = 0; i < FileNameSize - 1; i++ ) fname[i] = '\0';   //  <|        |
     for( uns32 i = 0; i < FileExtSize  - 1; i++ ) fext [i] = '\0';   //           <|
+}
+
+
+
+// reserve the file descriptor (initialize its fields)
+void FileDescriptor::reserve(const char* fname)
+{
+    release();            // reset the file descriptor
+    setFullName(fname);   // set the full filename
+}
+
+// free the file descriptor (reset file descriptor fields to their defaults)
+void FileDescriptor::release()
+{
+    resetFullName();   // clear the descriptor fields that hold the full filename
+    indx = nullblk;    // resetting multi purpose index of file to an invalid number
+    filesize = 0;      // resetting filesize to zero
+
+    // resetting first eight bytes of file
+    for( uns32 i = 0; i < FileSizeT; i++ ) byte[i] = 0;
+}
+
+
+
+// check if the file descriptor is free
+bool FileDescriptor::isFree() const { return (fname[0] == '\0' && fext[0] == '\0'); }
+// check if the file descriptor is taken
+bool FileDescriptor::isTaken() const { return (fname[0] != '\0' || fext[0] != '\0'); }
+
+
+
+// get the depth of the file structure
+siz32 FileDescriptor::getDepth() const { siz32 depth; getDepth(filesize, depth); return depth; }
+// get the number of blocks on all the the file structure levels
+void FileDescriptor::getBlockCount(siz32& indx1_cnt, siz32& indx2_cnt, siz32& data_cnt) const { getBlockCount(filesize, indx1_cnt, indx2_cnt, data_cnt); }
+// get the number of blocks to be allocated/freed when changing from the current file size to the next file size
+MFS FileDescriptor::getResizeBlockDelta(siz32 filesize_next, int32& indx1_delta, int32& indx2_delta, int32& data_delta) const { return getResizeBlockDelta(filesize, filesize_next, indx1_delta, indx2_delta, data_delta); }
+
+
+
+// get the traversal path to the given position in the file
+MFS FileDescriptor::getDataBlock(siz32 pos, Traversal& f) const
+{
+    // initialize the traversal path
+    f.init(indx, getDepth());
+
+    // fill the entries in the traversal path (that points to the given position in the file)
+    getEntries(pos, f);
+
+    // return the operation status
+    return f.status;
+}
+
+// get the path to the next block using the given traversal path to the current block
+MFS FileDescriptor::getNextDataBlock(Traversal& f) const
+{
+    // reset the data block index to an invalid value, so that the 'get next entry' function calculates the next data block (and not the next data block entry!)
+    f.ent[iBLOCK] = nullidx32;
+    // get the next data block from the current one in the traversal
+    getNextEntries(f);
+    // set the data block index to zero (the first entry in the data block)
+    f.ent[iBLOCK] = 0;
+
+    // return the status of the operation
+    return f.status;
+}
+
+// get the traversal path to the first empty data block in the file
+MFS FileDescriptor::getFirstEmptyDataBlock(Traversal& f) const
+{
+    // get the traversal path to the last non-empty data block in the file
+    getDataBlock(filesize, f);
+
+    // reset the data block index to an invalid value, so that the 'get next entry' function calculates the next data block (and not the next data block entry!)
+    f.ent[iBLOCK] = nullidx32;
+    // get the next data block (the first completely empty data block), return the status of the operation
+    getNextEntries(f);
+    // set the data block index to zero (the first entry in the data block)
+    f.ent[iBLOCK] = 0;
+
+    // return the status of the operation
+    return f.status;
 }
 
 

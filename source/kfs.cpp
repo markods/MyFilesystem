@@ -11,12 +11,14 @@
 #include "fd.h"
 #include "traversal.h"
 
+// TODO: napraviti thread koji periodicno zove flush kesa (koristiti std::thread i std::time_mutex, nit prekinuti unutar nje same i uraditi join sa njom u destruktoru kfs-a!)
+// TODO: proveriti da li file handle treba okruziti sa std::atomic<> i da li treba koristiti memory barijere!
+
 
 // _____________________________________________________________________________________________________________________________________________
 // THREAD.SAFE.PUBLIC.INTERFACE...THREAD.SAFE.PUBLIC.INTERFACE...THREAD.SAFE.PUBLIC.INTERFACE...THREAD.SAFE.PUBLIC.INTERFACE...THREAD.SAFE.PUBLI
 // _____________________________________________________________________________________________________________________________________________
 // THREAD.SAFE.PUBLIC.INTERFACE...THREAD.SAFE.PUBLIC.INTERFACE...THREAD.SAFE.PUBLIC.INTERFACE...THREAD.SAFE.PUBLIC.INTERFACE...THREAD.SAFE.PUBLI
-
 
 // get an instance to the filesystem class
 KFS& KFS::instance()
@@ -35,8 +37,9 @@ KFS& KFS::instance()
 KFS::KFS()
 {
     // initialize the event mutexes to locked state (so that the threads trying to access them block)
-    mutex_part_unmounted  .lock();
-    mutex_all_files_closed.lock();
+    mutex_part_unmounted    .lock();
+    mutex_all_files_closed  .lock();
+    mutex_no_threads_waiting.lock();
 }
 
 // TODO: opisati bolje kada se radi wait (kao na ostalim mestima)
@@ -46,6 +49,10 @@ KFS::~KFS()
     // obtain exclusive access to the filesystem class instance
     mutex_excl.lock();
 
+    // set that the filesystem is up for destruction
+    up_for_destruction = true;
+
+    // TODO: popraviti
     // loop until the blocking condition is false
     // if there is already a mounted partition and there are open files, make this thread wait until all the files on it are closed
     while( part != nullptr && !open_files.empty() )
@@ -67,7 +74,7 @@ KFS::~KFS()
     }
 
     // unconditionally unmount the given partition
-    MFS status = unmount_uc();
+    unmount_uc();
 
     // release exclusive access
     mutex_excl.unlock();
@@ -76,20 +83,10 @@ KFS::~KFS()
     // so it shouldn't do anything thread-unsafe (e.g. read the filesystem class state, ...)
 
     // TODO: sacekati sve niti koje cekaju na nekom event-u ovde -- koristiti up_for_destruction bool u svakoj metodi koja treba da bude probudjena
-    //       ne bi trebalo da se proveravaju open files!
-    //       prekinuti nit koja radi flush! (unutar nje same), uraditi join sa njom u destruktoru!
-    //       postaviti fleg koji kaze da se radi destroy?
-
-    // TODO: napraviti thread koji periodicno zove flush kesa! (koristiti std::thread)
-    //       poslati all files closed event unutar file close funkcije
-
-    // TODO: proveriti da li se file handle treba okruziti sa std::atomic<>
-    //       promeniti destruktor file handle-a tako da poziva closeFileHandle_uc
-
+    // TODO: proveriti da li se svi bool-ovi koriste unutar kfs i kfile! -- formatted, prevent_open i up_for_destruction
     // TODO: obavezno na kraju proveriti sinhronizaciju
-    //       proveriti da li se svi bool-ovi koriste unutar kfs i kfile!
-
-    // TODO: proveriti da li treba koristiti negde memory barijere!
+    // TODO: treba probuditi sve niti koje cekaju na all_files_closed event-u nakon sto se desi!
+    // TODO: proveriti da li se probija maksimalna velicina fajla
 }
 
 
@@ -119,6 +116,17 @@ MFS KFS::mount(Partition* partition)
 
         // decrease the number of threads waiting for unmount event
         mutex_part_unmounted_cnt--;
+    }
+
+    // TODO: popraviti
+    // if the filesystem class is up for destruction, prevent mounting (even if the thread waited)
+    if( up_for_destruction )
+    {
+        // release exclusive access
+        mutex_excl.unlock();
+
+        // return an error code
+        return MFS_ERROR;
     }
 
     // unconditionally mount the given partition
@@ -432,23 +440,62 @@ MFS KFS::deleteFile(const char* filepath)
 // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
 MFS32 KFS::readFromFile(KFile& file, siz32 count, Buffer buffer)
 {
-    // TODO: napraviti
-    return 0;
+    // obtain exclusive access to the filesystem class instance
+    mutex_excl.lock();
+
+    // TODO: update-ovati file descriptor!
+    // unconditionally try to read from the file
+    MFS32 status = readFromFile_uc(file.fdpos, file.seekpos, count, buffer);
+
+    // release exclusive access
+    mutex_excl.unlock();
+
+    // at this point this thread doesn't have exclusive access to the filesystem class
+    // so it shouldn't do anything thread-unsafe (e.g. read the filesystem class state, ...)
+
+    // return the operation status
+    return status;
 }
 
 // write the requested number of bytes from the buffer into the file starting from the seek position (also update the seek position)
 // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
-MFS KFS::writeToFile(KFile& file, siz32 count, Buffer buffer)
+MFS KFS::writeToFile(KFile& file, siz32 count, const Buffer buffer)
 {
-    // TODO: napraviti
-    return MFS_OK;
+    // obtain exclusive access to the filesystem class instance
+    mutex_excl.lock();
+
+    // TODO: update-ovati file descriptor!
+    // unconditionally try to write to the file
+    MFS32 status = writeToFile_uc(file.fdpos, file.seekpos, count, buffer);
+
+    // release exclusive access
+    mutex_excl.unlock();
+
+    // at this point this thread doesn't have exclusive access to the filesystem class
+    // so it shouldn't do anything thread-unsafe (e.g. read the filesystem class state, ...)
+
+    // return the operation status
+    return status;
 }
 
 // throw away the file's contents starting from the seek position until the end of the file (but keep the file descriptor in the filesystem)
 MFS KFS::truncateFile(KFile& file)
 {
-    // TODO: napraviti
-    return MFS_OK;
+    // obtain exclusive access to the filesystem class instance
+    mutex_excl.lock();
+
+    // TODO: update-ovati file descriptor!
+    // unconditionally try to truncate the file
+    MFS32 status = truncateFile_uc(file.fdpos, file.seekpos);
+
+    // release exclusive access
+    mutex_excl.unlock();
+
+    // at this point this thread doesn't have exclusive access to the filesystem class
+    // so it shouldn't do anything thread-unsafe (e.g. read the filesystem class state, ...)
+
+    // return the operation status
+    return status;
 }
 
 
@@ -557,6 +604,17 @@ MFS KFS::isFormatted_uc()
     return (formatted) ? MFS_OK : MFS_NOK;
 }
 
+// check if the class instance is up for destruction
+// if it is, wake up a single thread that is waiting on any of the events, and when there are no more threads waiting on any event wake up the one that called the destructor
+MFS KFS::isUpForDestruction_uc()
+{
+    if( !up_for_destruction ) return MFS_NOK;
+    // TODO: napraviti
+
+    // return that the 
+    return MFS_OK;
+}
+
 // get the number of files in the root directory on the mounted partition
 MFS32 KFS::getRootFileCount_uc()
 {
@@ -582,6 +640,8 @@ MFS32 KFS::getRootFileCount_uc()
     // return the newly calculated file count
     return filecnt;
 }
+
+
 
 // check if the root full file path is valid (e.g. /myfile.cpp)
 MFS KFS::isFullPathValid_uc(const char* filepath)
@@ -854,7 +914,7 @@ MFS KFS::alocFileDesc_uc(Traversal& t)
     if( t.status == MFS_OK ) return t.status;
 
     // otherwise, try to deallocate the newly allocated blocks, if the deallocation isn't successful return a serious error code (otherwise return that the allocation was unsuccessful)
-    // FIXME: if this deallocation fails, the filesystem is corrupt
+    // FIXME: if this deallocation fails, the filesystem bit vector is corrupt
     //        currently there is no way to guarantee atomicity of all filesystem operations, since journalling isn't implemented
     //        therefore we permanently lose one or two blocks on the partition :(
     return ( ( t.status = freeBlocks_uc(ids) ) == MFS_OK ) ? MFS_NOK : MFS_ERROR;
@@ -866,7 +926,7 @@ MFS KFS::freeFileDesc_uc(Traversal& t)
     // if a previous operation wasn't successful, return an error code
     if( t.status != MFS_OK ) return MFS_BADARGS;
 
-    // create an array of three padded blocks
+    // create three padded blocks
     PaddedBlock paddedINDX1, paddedINDX2, paddedBLOCK;
     // create references to the block part of the padded blocks
     // the blocks will hold the root directory's level1 index block, one of its level2 index blocks and one of its directory blocks during the traversal
@@ -922,8 +982,8 @@ MFS KFS::freeFileDesc_uc(Traversal& t)
                 // get a file handle with the exact file path
                 KFile::Handle handle { getFileHandle_uc(filepath) };
 
-                // if the file handle exists, update its entry index to match the position of the file descriptor in the directory block
-                if( handle ) handle->entDIRE = idx;
+                // if the file handle exists, update its location in the directory (update its block entry to match the position of the file descriptor in the directory block)
+                if( handle ) handle->fdpos.ent[iBLOCK] = idx;
             }
 
             // if the first file descriptor is taken, then the directory block shouldn't be deallocated, skip the next bit of code
@@ -983,7 +1043,7 @@ MFS KFS::freeFileDesc_uc(Traversal& t)
     } while( false );
 
     // try to deallocate blocks that are empty
-    // FIXME: if this deallocation fails, the filesystem is corrupt
+    // FIXME: if this deallocation fails, the filesystem bit vector is corrupt
     //        currently there is no way to guarantee atomicity of all filesystem operations, since journalling isn't implemented
     //        therefore we permanently lose one or two blocks on the partition :(
     t.status = freeBlocks_uc(ids);
@@ -1018,7 +1078,7 @@ MFS KFS::findFile_uc(const char* filepath, Traversal& t)
     bool find_empty_fd = (special == MFS_OK) && (filepath[0] == '\0');
 
 
-    // create an array of three padded blocks
+    // create three padded blocks
     PaddedBlock paddedINDX1, paddedINDX2, paddedDIRE;
     // create references to the block part of the padded blocks
     // the blocks will hold the root directory's level1 index block, one of its level2 index blocks and one of its directory blocks during the traversal
@@ -1203,88 +1263,121 @@ MFS KFS::writeToFile_uc(Traversal& t, siz32 pos, siz32 count, const Buffer buffe
 MFS KFS::truncateFile_uc(Traversal& t, siz32 pos)
 {
     // if the partition isn't formatted, return an error code
-    if( !formatted ) return MFS_ERROR;
+    if( !formatted ) return t.status = MFS_ERROR;
 
+    // create a block that will hold the directory block that holds the file descriptor
+    Block DIRE;
+    // if the directory block holding the file descriptor couldn't be read, return an error code
+    if( ( t.status = cache.readFromPart(part, t.loc[iBLOCK], DIRE) ) != MFS_OK ) return t.status;
+    
+    // get the file descriptor from the directory block
+    FileDescriptor fd = DIRE.dire.filedesc[t.ent[iBLOCK]];
 
+    // if the start position for the truncation is outside the file, return an error code
+    if( pos > fd.filesize ) return t.status = MFS_BADARGS;
+    // if the truncation isn't necessary, return that the operation is successful
+    if( pos == fd.filesize ) return t.status = MFS_OK;
 
+    // create variables that will hold the number of block to be deallocated per level for the file
+    int32 indx1_delta, indx2_delta, data_delta;
+    // calculate the number of blocks to be deallocated for all file structure levels
+    fd.getResizeBlockDelta(pos, indx1_delta, indx2_delta, data_delta);
 
+    // save the new file size in the file descriptor
+    // it is important to do this here, since the file traversal uses the file size to figure out the first block to be deallocated later on
+    fd.filesize = pos;
 
-    // create an array of three padded blocks
-    PaddedBlock paddedINDX1, paddedINDX2, paddedDIRE;
-    // create references to the block part of the padded blocks
-    // the blocks will hold the root directory's level1 index block, one of its level2 index blocks and one of its directory blocks during the traversal
-    Block& INDX1 { paddedINDX1.block };
-    Block& INDX2 { paddedINDX2.block };
-    Block& DIRE  { paddedDIRE .block };
-    // initialize the paddings in the padded blocks
-    paddedINDX1.pad.entry = nullblk;
-    paddedINDX2.pad.entry = nullblk;
-    paddedDIRE .pad.filedesc.setFullName("*");   // an invalid filename
+    // create blocks that will hold the file's level1 index block and one of its level2 index blocks
+    Block INDX1, INDX2;
+    // create a traversal path for the file
+    Traversal f;
+    // initialize the file's traversal path to point to the first data block to be deallocated
+    fd.getFirstEmptyDataBlock(f);
 
-    // start the traversal from the beginning of the root directory index1 block
-    t.init(RootIndx1Location, MaxDepth);
+    // create a vector for holding ids of blocks to be deallocated
+    std::vector<idx32> ids;
 
-    // set the status of the search
+    // reset the status of the entire operation
     t.status = MFS_NOK;
 
 
-    // start the search
-
-    // if the root directory's index1 block couldn't be read, remember that an error occured
-    if( cache.readFromPart(part, t.loc[iINDX1], INDX1) != MFS_OK ) t.status = MFS_ERROR;
-
-    // for every entry in the root directory's index1 block
-    for( t.ent[iINDX1] = 0;   t.status == MFS_NOK;   t.ent[iINDX1]++ )
+    // start deallocating blocks
+    // a do-while loop that always executes once (used because of the breaks -- if there was no loop surrounding the inner code, the code would be really messy)
+    do
     {
-        // if the entry doesn't point to a valid index2 block
-        if( (t.loc[iINDX2] = INDX1.indx.entry[t.ent[iINDX1]]) == nullblk )
+        // if there are no data blocks to be deallocated
+        if( data_delta == 0 )
         {
-            // if the search is for an empty file descriptor, set the status as not found (since the file descriptor hasn't been allocated)
-            if( find_empty_fd ) t.status = MFS_NOK;
-            // return to the previous level of the traversal
+            // set that the deallocation was successful
+            t.status = MFS_OK;
+
+            // skip the next bit of code
             break;
         }
 
-        // if the current index2 block couldn't be read, remember that an error occured
-        if( cache.readFromPart(part, t.loc[iINDX2], INDX2) != MFS_OK ) t.status = MFS_ERROR;
+        // TODO: popraviti
 
-        // for every entry in the current index2 block
-        for( t.ent[iINDX2] = 0;   t.status == MFS_NOK;   t.ent[iINDX2]++ )
+        // if the file's index1 block couldn't be read, remember that an error occured
+        if( cache.readFromPart(part, f.loc[iINDX1], INDX1) != MFS_OK ) t.status = MFS_ERROR;
+
+        // for every entry in the file's index1 block
+        for( f.ent[iINDX1] = 0;   t.status == MFS_NOK;   f.ent[iINDX1]++ )
         {
-            // if the entry doesn't point to a valid directory block
-            if( (t.loc[iBLOCK] = INDX2.indx.entry[t.ent[iINDX2]]) == nullblk )
+            // if the entry doesn't point to a valid index2 block
+            if( (f.loc[iINDX2] = INDX1.indx.entry[f.ent[iINDX1]]) == nullblk )
             {
-                // if the search is for an empty file descriptor, set the status as not found (since the file descriptor hasn't been allocated)
-                if( find_empty_fd ) t.status = MFS_NOK;
+                // the index1 block should be deallocated
+                ids.push_back(f.loc[iINDX1]);
+
                 // return to the previous level of the traversal
                 break;
             }
 
-            // if the current directory block couldn't be read, remember that an error occured
-            if( cache.readFromPart(part, t.loc[iBLOCK], DIRE) != MFS_OK ) t.status = MFS_ERROR;
+            // if the current index2 block couldn't be read, remember that an error occured
+            if( cache.readFromPart(part, f.loc[iINDX2], INDX2) != MFS_OK ) t.status = MFS_ERROR;
 
-            // for every file descriptor in the current directory block
-            for( t.ent[iBLOCK] = 0;   t.status == MFS_NOK;   t.ent[iBLOCK]++ )
+            // for every entry in the current index2 block
+            for( f.ent[iINDX2] = 0;   t.status == MFS_NOK;   f.ent[iINDX2]++ )
             {
-                // if the given full file name matches the full file name in the file descriptor, the search is successful
-                // this comparison must be before the conditional break, because sometimes we need to match an empty file descriptor!
-                if( DIRE.dire.filedesc[t.ent[iBLOCK]].cmpFullName(&filepath[1]) == MFS_EQUAL ) t.status = MFS_OK;
+                // if the entry doesn't point to a valid data block
+                if( (f.loc[iBLOCK] = INDX2.indx.entry[f.ent[iINDX2]]) == nullblk )
+                {
+                    // the index2 block should be deallocated
+                    ids.push_back(f.loc[iINDX2]);
 
-                // if the file descriptor is free (not taken), return to the previous level of traversal
-                if( DIRE.dire.filedesc[t.ent[iBLOCK]].isFree() ) break;
-                
-                // increase the number of scanned files (since the file descriptor is taken)
-                t.filesScanned++;
+                    // return to the previous level of the traversal
+                    break;
+                }
+
+                // save the location of the data block in the block ids vector
+                ids.push_back(f.loc[iBLOCK]);
+
+                // 
+                if( --datablk_dealloc_cnt == 0 ) t.status = MFS_OK;
             }
         }
     }
+    // end of do-while loop that executes always once
+    while( false );
 
 
-    // recalculate the depth of the traversal
-    t.recalcDepth();
+    // if the operation wasn't successful, return its status code
+    if( t.status != MFS_OK ) return t.status;
 
-    // return the status of the search
-    return t.status;
+    // update the file descriptor in the directory block
+    DIRE.dire.filedesc[t.ent[iBLOCK]] = fd;
+
+    // if the write of the file descriptor to the cache wasn't successful, return its status code
+    if( ( t.status = cache.writeToPart(part, t.loc[iBLOCK], DIRE) ) != MFS_OK ) return t.status;
+
+    // deallocate all the blocks that are not needed anymore (after the truncation)
+    // FIXME: if this deallocation fails, the filesystem bit vector is corrupt
+    //        currently there is no way to guarantee atomicity of all filesystem operations, since journalling isn't implemented
+    //        therefore we could permanently lose many blocks on the partition :(
+    freeBlocks_uc(ids);
+
+    // return that the operation was successful
+    return t.status = MFS_OK;
 }
 
 

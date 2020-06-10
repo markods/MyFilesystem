@@ -8,8 +8,9 @@
 #pragma once
 #include "!global.h"
 #include <mutex>
-struct Traversal;
-struct FileDescriptor;
+#include "traversal.h"
+#include "fd.h"
+class KFS;
 
 
 // kernel's implementation of a file
@@ -25,13 +26,12 @@ public:
     using Handle = std::shared_ptr<KFile>;
 
 private:
-    char filepath[1 + FullFileNameSize]; // absolute path of the file (in the root directory)
-    char mode { '\0' };                  // access mode ('r'ead, 'w'rite + read, 'a'ppend + read)
-    siz32 filesize { 0 };                // size of the file in bytes
-    idx32 seekpos { 0 };                 // seek position (pointer to the file contents, used in reads and writes + appends)
+    char filepath[1 + FullFileNameSize]; // absolute path of the file
+    Traversal fdpos;                     // location of the file descriptor in the directory
+    FileDescriptor fd;                   // file descriptor for the file
 
-    idx32 locDIRE { nullblk };           // location of the directory block in which the file descriptor is located in
-    idx32 entDIRE { nullidx32 };         // index of the entry in the directory block that holds the file descriptor for this file
+    char mode { '\0' };                  // access mode ('r'ead, 'w'rite + read, 'a'ppend + read)
+    idx32 seekpos { 0 };                 // seek position (pointer to the file contents, used in reads and writes + appends)
 
     std::mutex mutex_file_closed;        // mutex used for signalling that the file (handle) has been closed by a thread
     siz32 mutex_file_closed_cnt { 0 };   // number of threads waiting for the file closed event
@@ -40,7 +40,7 @@ private:
 // ====== thread-safe public interface ======
 private:
     // construct the file object, only the filesystem can create a file
-    KFile(Traversal& t, FileDescriptor& fd);
+    KFile(Traversal& fdpos, FileDescriptor& fd);
 
 public:
     // destruct the file object -- close the file handle, but don't delete the file from the filesystem!
