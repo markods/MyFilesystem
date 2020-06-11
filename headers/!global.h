@@ -10,7 +10,9 @@
 
 // ====== for debugging ======
 // if this symbol is defined, then unit testing functions will be defined in various other files
-#define DEBUG
+#define UNIT_TESTING
+// if this symbol is defined, then functional testing functions will be defined in various other files
+#define FUNC_TESTING
 
 
 // ====== types ======
@@ -97,7 +99,7 @@ constexpr int32 MFS_PART_ERR = 0;         // partition operation unsuccessful or
 
 
 // ====== types and constants in file "fd.h" ======
-using FileCnt  = siz32;
+using FileCnt  = int32;
 using BytesCnt = siz32;
 constexpr siz32 FileNameSize = 8+1;   // maximum length of filename in bytes (without extension, '.' and including '\0')
 constexpr siz32 FileExtSize  = 3+1;   // maximum length of file extension in bytes (including '\0')
@@ -152,6 +154,26 @@ constexpr siz32 MaxDepth          = 3;     // max number of blocks that must be 
 constexpr idx32 iINDX1 = 2;     // position of the   level 1 index block info in the traversal arrays
 constexpr idx32 iINDX2 = 1;     // position of the   level 2 index block info in the traversal arrays
 constexpr idx32 iBLOCK = 0;     // position of the general purpose block info in the traversal arrays
+
+
+
+// ====== types and constants in file "fs.h" ======
+constexpr siz32 FNAMELEN = FileNameSize-1;   // max length of the file name
+constexpr siz32 FEXTLEN  = FileExtSize-1;    // max length of the file extension
+constexpr int32 MFS_FS_OK  =  1;             // filesystem operation successful
+constexpr int32 MFS_FS_NOK =  0;             // filesystem operation unsuccessful (or error)
+constexpr int32 MFS_FS_ERR = -1;             // filesystem operation error
+
+
+
+// ====== types and constants in file "file.h" ======
+constexpr int32 MFS_FILE_OK  =  1;   // file operation successful
+constexpr int32 MFS_FILE_NOK =  0;   // file operation unsuccessful (or error)
+constexpr int32 MFS_FILE_ERR = -1;   // file operation error
+
+constexpr int32 MFS_FILE_EOF_OK  = 2;   // seek position past the end of file
+constexpr int32 MFS_FILE_EOF_ERR = 1;   // seek position error
+constexpr int32 MFS_FILE_EOF_NOK = 0;   // seek position inside the file
 
 
 

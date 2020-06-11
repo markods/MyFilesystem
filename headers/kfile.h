@@ -53,7 +53,7 @@ public:
     // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
     MFS write(siz32 count, Buffer buffer);
     // throw away the file's contents starting from the seek position until the end of the file (but keep the file descriptor in the filesystem)
-    MFS truncate(idx32 position);
+    MFS truncate();
     // set the file seek position to the given position
     // +   valid positions are in the range [0, filesize] (filesize included! -- used for writing to the end of the file)
     MFS setSeekPos(idx32 position);

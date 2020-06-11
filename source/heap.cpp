@@ -9,7 +9,7 @@
 #include "heap.h"
 
 
-#ifdef DEBUG
+#ifdef UNIT_TESTING
     void MFS_HEAP_CHECK()
     {
         Heap<int> h;

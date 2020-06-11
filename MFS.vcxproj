@@ -37,7 +37,9 @@
     <ClCompile Include="source\cache.cpp" />
     <ClCompile Include="source\cacheslot.cpp" />
     <ClCompile Include="source\fd.cpp" />
-    <ClCompile Include="source\global.cpp" />
+    <ClCompile Include="source\file.cpp" />
+    <ClCompile Include="source\fs.cpp" />
+    <ClCompile Include="source\!global.cpp" />
     <ClCompile Include="source\heap.cpp" />
     <ClCompile Include="source\kfile.cpp" />
     <ClCompile Include="source\kfs.cpp" />

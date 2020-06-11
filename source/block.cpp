@@ -180,7 +180,7 @@ void Block::copyFromBuffer(const Buffer buffer)
 Block::operator Buffer() { return (Buffer) (data.byte); }
 
 
-#ifdef DEBUG
+#ifdef UNIT_TESTING
     void MFS_BLOCKS_CHECK()
     {
         static_assert(sizeof(Block)          == ClusterSize,      "size of block is different from cluster size"            );

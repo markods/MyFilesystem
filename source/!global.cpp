@@ -1,6 +1,6 @@
 #include "!global.h"
 
-#ifdef DEBUG
+#ifdef UNIT_TESTING
     // check if system configuration is different than expected
     void MFS_SYSCFG_CHECK()
     {

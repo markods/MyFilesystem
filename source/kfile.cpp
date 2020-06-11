@@ -58,7 +58,7 @@ MFS KFile::write(siz32 count, Buffer buffer)
 }
 
 // throw away the file's contents starting from the seek position until the end of the file (but keep the file descriptor in the filesystem)
-MFS KFile::truncate(idx32 position)
+MFS KFile::truncate()
 {
     // get an instance to the kernel filesystem class, and call its corresponding method
     return KFS::instance().truncateFile(*this);

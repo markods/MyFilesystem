@@ -384,7 +384,7 @@ KFile::Handle KFS::openFile(const char* filepath, char mode)
     if( prevent_open )
     {
         // unconditionally try to close the file
-        // IMPORTANT: this operation must succeed, otherwise there will be a deadlock!
+        // IMPORTANT: this operation must succeed, otherwise there will be a deadlock! (since this operation always succeeds by design, that is not a problem)
         closeFileHandle_uc(filepath);
 
         // 1. if the handle exists and there is a thread waiting for <file closed> wake it up, otherwise
@@ -1379,7 +1379,7 @@ MFS KFS::truncateFile_uc(Traversal& t, siz32 pos, FileDescriptor& fd)
                 ids.push_back(f.loc[iBLOCK]);
 
                 // 
-                if( --datablk_dealloc_cnt == 0 ) t.status = MFS_OK;
+             // if( --datablk_dealloc_cnt == 0 ) t.status = MFS_OK;
             }
 
             // reset the index2 entry to zero

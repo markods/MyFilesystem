@@ -55,9 +55,6 @@
     <ClCompile Include="source\block.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="source\global.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="source\heap.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -77,6 +74,15 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="source\traversal.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="source\file.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="source\fs.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="source\!global.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
