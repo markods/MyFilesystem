@@ -77,6 +77,7 @@ constexpr int32 MFS_NOK     =  0;   // operation was unsuccessful (similar to fa
 
 constexpr int32 MFS_BADARGS = -1;   // bad arguments were given in function call
 constexpr int32 MFS_ERROR   = -2;   // operation failed due to some internal error
+constexpr int32 MFS_DESTROY = -3;   // operation failed because the class is being destroyed
 // ...                              // user-defined status codes should be >= 10 or <= -10
 
 // constants for pretty printing to otput stream

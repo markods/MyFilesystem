@@ -21,8 +21,9 @@ struct Traversal;
 // kernel's implementation of a filesystem
 // the filesystem only has a single (root) directory and a maximum of one mounted partition at any time
 // all the public methods in this class are thread safe, but:
-// +   the destructor must not be called before all threads finish using this object, and no new threads should start using this object after the destructor is called!
-// +   otherwise it could happen that a thread is using a deleted object (since we can't guarantee that the thread that called the destructor gets woken up last)
+// +   the destructor must not be called before all threads pass the exclusive access mutex, and no new threads should start using this object after the destructor is called!
+// +   otherwise it could happen that a thread is using a deleted object (since we can't guarantee that there are no threads waiting on the exclusive mutex before the destructor finishes)
+// +   this is prevented by never releasing exclusive access from the destructor! (therefore the threads will wait indefinitely)
 class KFS
 {
 private:
@@ -41,7 +42,7 @@ private:
     std::mutex mutex_excl;               // mutex used for exclusive access to the filesystem class
     std::mutex mutex_part_unmounted;     // mutex used for signalling partition unmount events
     std::mutex mutex_all_files_closed;   // mutex used for signalling that all files are closed on a partition
-    std::mutex mutex_no_threads_waiting; // mutex used for signalling that all threads that were waiting on an event have finished
+    std::mutex mutex_no_threads_waiting; // mutex used for signalling that all threads that were waiting on any event have finished
 
     siz32 mutex_part_unmounted_cnt   { 0 };   // number of threads waiting for the partition unmount event
     siz32 mutex_all_files_closed_cnt { 0 };   // number of threads waiting for the all files closed event
@@ -55,19 +56,21 @@ public:
 private:
     // construct the filesystem
     KFS();
+    // wait until there are [no threads waiting on any event] (except for the exclusive mutex), if there is at least one thread waiting wake it up
     // destruct the filesystem
     ~KFS();
 
 public:
-    // wait until there is no mounted partition
+    // wait until [there is no mounted partition]
     // mount the partition into the filesystem (which has a maximum of one mounted partition at any time)
     MFS mount(Partition* partition);
-    // wait until all the open files on the partition are closed
+    // wait until [all open files on the partition are closed]
     // unmount the partition from the filesystem
-    // wake up a single thread that waited to mount another partition
+    // wake up a single! thread that waited for [all files the partition to be closed] or to [mount a partition], in this exact order!
     MFS unmount();
-    // wait until all the open files on the partition are closed
+    // wait until [all open files on the partition are closed]
     // format the mounted partition, if there is no mounted partition return an error
+    // wake up a single thread that waited for [all open files on the partition to be closed]
     MFS format();
 
     // check if the mounted partition is formatted
@@ -75,15 +78,15 @@ public:
     // get the number of files in the root directory on the mounted partition
     MFS32 getRootFileCount();
 
-    // check if a file exists in the root directory on the mounted partition, if it does return the index of the directory block containing its file descriptor
+    // check if a file exists in the root directory on the mounted partition
     MFS fileExists(const char* filepath);
-    // wait until no one uses the file with the given full file path
+    // wait until [no one uses the file with the given full file path]
     // open a file on the mounted partition with the given full file path (e.g. /myfile.cpp) and access mode ('r'ead, 'w'rite + read, 'a'ppend + read)
     // +   read and append fail if the file with the given full path doesn't exist
     // +   write will try to create a file before writing to it if the file doesn't exist
     KFile::Handle openFile(const char* filepath, char mode);
     // close a file with the given full file path (e.g. /myfile.cpp)
-    // wake up a single thread that waited to open the now closed file
+    // wake up a single thread that waited to [open the now closed file]
     MFS closeFile(const char* filepath);
     // delete a file on the mounted partition given the full file path (e.g. /myfile.cpp)
     // the delete will succeed only if the file is not being used by a thread (isn't open)
@@ -110,9 +113,6 @@ private:
 
     // check if the mounted partition is formatted
     MFS isFormatted_uc();
-    // check if the class instance is up for destruction
-    // if it is, wake up a single thread that is waiting on any of the events, and when there are no more threads waiting on any event wake up the one that called the destructor
-    MFS isUpForDestruction_uc();
     // get the number of files in the root directory on the mounted partition
     MFS32 getRootFileCount_uc();
 
@@ -143,14 +143,14 @@ private:
     // delete a file on the mounted partition given the full file path (e.g. /myfile.cpp)
     MFS deleteFile_uc(const char* filepath);
 
-    // read up to the requested number of bytes from the file starting from the given position into the given buffer, return the number of bytes read
+    // read up to the requested number of bytes from the file starting from the given position into the given buffer, return the number of bytes read, return the updated file descriptor
     // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
-    MFS32 readFromFile_uc(Traversal& t, siz32 pos, siz32 count, Buffer buffer);
-    // write the requested number of bytes from the buffer into the file starting from the given position
+    MFS32 readFromFile_uc(Traversal& t, siz32 pos, siz32 count, Buffer buffer, FileDescriptor& fd);
+    // write the requested number of bytes from the buffer into the file starting from the given position, return the updated file descriptor
     // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
-    MFS writeToFile_uc(Traversal& t, siz32 pos, siz32 count, const Buffer buffer);
-    // throw away the file's contents starting from the given position until the end of the file (but keep the file descriptor in the filesystem)
-    MFS truncateFile_uc(Traversal& t, siz32 pos);
+    MFS writeToFile_uc(Traversal& t, siz32 pos, siz32 count, const Buffer buffer, FileDescriptor& fd);
+    // throw away the file's contents starting from the given position until the end of the file (but keep the file descriptor in the filesystem), return the updated file descriptor
+    MFS truncateFile_uc(Traversal& t, siz32 pos, FileDescriptor& fd);
 
     // open a file on the mounted partition with the given full file path (e.g. /myfile.cpp) and mode ('r'ead, read + 'w'rite, read + 'a'ppend)
     // return the file's handle with the mode unchanged if it already exists, otherwise initialize it
@@ -158,6 +158,7 @@ private:
     // get a file handle for the file with the given full file path from the filesystem open file table
     KFile::Handle getFileHandle_uc(const char* filepath);
     // close a file handle with the given full file path
+    // this operation never fails
     MFS closeFileHandle_uc(const char* filepath);
 };
 

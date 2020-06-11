@@ -11,8 +11,8 @@
 #include "fd.h"
 #include "traversal.h"
 
-// TODO: napraviti thread koji periodicno zove flush kesa (koristiti std::thread i std::time_mutex, nit prekinuti unutar nje same i uraditi join sa njom u destruktoru kfs-a!)
-// TODO: proveriti da li file handle treba okruziti sa std::atomic<> i da li treba koristiti memory barijere!
+// FIXME: napraviti thread koji periodicno zove flush kesa (koristiti std::thread i std::time_mutex, nit prekinuti unutar nje same i uraditi join sa njom u destruktoru kfs-a!)
+// FIXME: proveriti da li file handle treba okruziti sa std::atomic<> i da li treba koristiti memory barijere!
 
 
 // _____________________________________________________________________________________________________________________________________________
@@ -42,115 +42,14 @@ KFS::KFS()
     mutex_no_threads_waiting.lock();
 }
 
-// TODO: opisati bolje kada se radi wait (kao na ostalim mestima)
+// wait until there are [no threads waiting on any event] (except for the exclusive mutex), if there is at least one thread waiting wake it up
 // destruct the filesystem
 KFS::~KFS()
 {
     // obtain exclusive access to the filesystem class instance
     mutex_excl.lock();
 
-    // set that the filesystem is up for destruction
-    up_for_destruction = true;
-
-    // TODO: popraviti
-    // loop until the blocking condition is false
-    // if there is already a mounted partition and there are open files, make this thread wait until all the files on it are closed
-    while( part != nullptr && !open_files.empty() )
-    {
-        // increase the number of threads waiting for the all files closed event
-        mutex_all_files_closed_cnt++;
-
-        // release the exclusive access mutex
-        mutex_excl.unlock();
-
-        // wait for the all files closed event
-        mutex_all_files_closed.lock();
-
-        // the thread only reaches this point when some other thread wakes this thread up
-        // the other thread didn't release its exclusive access, which means that this thread continues with exclusive access (transfered implicitly by the other thread)
-
-        // decrease the number of threads waiting for the all files closed event
-        mutex_all_files_closed_cnt--;
-    }
-
-    // unconditionally unmount the given partition
-    unmount_uc();
-
-    // release exclusive access
-    mutex_excl.unlock();
-
-    // at this point this thread doesn't have exclusive access to the filesystem class
-    // so it shouldn't do anything thread-unsafe (e.g. read the filesystem class state, ...)
-
-    // TODO: sacekati sve niti koje cekaju na nekom event-u ovde -- koristiti up_for_destruction bool u svakoj metodi koja treba da bude probudjena
-    // TODO: proveriti da li se svi bool-ovi koriste unutar kfs i kfile! -- formatted, prevent_open i up_for_destruction
-    // TODO: obavezno na kraju proveriti sinhronizaciju
-    // TODO: treba probuditi sve niti koje cekaju na all_files_closed event-u nakon sto se desi!
-    // TODO: proveriti da li se probija maksimalna velicina fajla
-}
-
-
-
-// wait until there is no mounted partition
-// mount the partition into the filesystem (which has a maximum of one mounted partition at any time)
-MFS KFS::mount(Partition* partition)
-{
-    // obtain exclusive access to the filesystem class instance
-    mutex_excl.lock();
-
-    // loop until the blocking condition is false
-    // if there is already a mounted partition, make this thread wait until it is unmounted
-    while( part != nullptr )
-    {
-        // increase the number of threads waiting for the unmount event
-        mutex_part_unmounted_cnt++;
-
-        // release the exclusive access mutex
-        mutex_excl.unlock();
-
-        // wait for the partition unmount event
-        mutex_part_unmounted.lock();
-
-        // the thread only reaches this point when some other thread wakes this thread up
-        // the other thread didn't release its exclusive access, which means that this thread continues with exclusive access (transfered implicitly by the other thread)
-
-        // decrease the number of threads waiting for unmount event
-        mutex_part_unmounted_cnt--;
-    }
-
-    // TODO: popraviti
-    // if the filesystem class is up for destruction, prevent mounting (even if the thread waited)
-    if( up_for_destruction )
-    {
-        // release exclusive access
-        mutex_excl.unlock();
-
-        // return an error code
-        return MFS_ERROR;
-    }
-
-    // unconditionally mount the given partition
-    MFS status = mount_uc(partition);
-    
-    // release exclusive access
-    mutex_excl.unlock();
-
-    // at this point this thread doesn't have exclusive access to the filesystem class
-    // so it shouldn't do anything thread-unsafe (e.g. read the filesystem class state, ...)
-
-    // return the operation status
-    return status;
-}
-
-// wait until all the open files on the partition are closed
-// unmount the partition from the filesystem
-// wake up a single thread that waited to mount another partition
-MFS KFS::unmount()
-{
-    // obtain exclusive access to the filesystem class instance
-    mutex_excl.lock();
-
-    // prevent the opening of new files
+    // set that the opening of new files is forbidden
     prevent_open = true;
 
     // loop until the blocking condition is false
@@ -174,23 +73,82 @@ MFS KFS::unmount()
     }
 
     // unconditionally unmount the given partition
-    MFS status = unmount_uc();
+    // FIXME: if there is an error, then the cache has not been fully flushed to the partition, and the filesystem is corrupt!
+    unmount_uc();
 
-    // remove the file opening prevention policy
-    prevent_open = false;
+    // set that the filesystem is up for destruction
+    up_for_destruction = true;
 
-    // if there are threads waiting for the unmount event, unblock one of them
-    if( mutex_part_unmounted_cnt > 0 )
+    // if there are threads waiting for <the partition unmount event> or the <all files closed event>
+    // (there are definitely no threads waiting for the <file open event>, since the partition has been unmounted)
+    while( mutex_part_unmounted_cnt + mutex_all_files_closed_cnt > 0 )
     {
-        // send an unmount event
-        mutex_part_unmounted.unlock();
+        // 1. if there is a thread waiting for <partition unmount> wake it up, otherwise
+        // 2. if there is a thread waiting for <all files closed> wake it up
+        if     ( mutex_part_unmounted_cnt   > 0 ) { mutex_part_unmounted  .unlock(); }
+        else if( mutex_all_files_closed_cnt > 0 ) { mutex_all_files_closed.unlock(); }
+
+        // wait until there are <no threads waiting on any event>
+        mutex_no_threads_waiting.lock();
+
+        // the thread only reaches this point when some other thread wakes this thread up
+        // the other thread didn't release its exclusive access, which means that this thread continues with exclusive access (transfered implicitly by the other thread)
     }
-    // otherwise
-    else
+
+    // this thread never releases its exclusive access (so that other threads wanting to access the filesystem class shouldn't try to access it after its destruction)
+}
+
+
+
+// wait until [there is no mounted partition]
+// mount the partition into the filesystem (which has a maximum of one mounted partition at any time)
+MFS KFS::mount(Partition* partition)
+{
+    // obtain exclusive access to the filesystem class instance
+    mutex_excl.lock();
+
+    // loop until the blocking condition is false
+    // if there is already a mounted partition, make this thread wait until it is unmounted
+    while( part != nullptr )
     {
-        // release exclusive access
+        // if the filesystem is up for destruction, skip the blocking condition
+        if( up_for_destruction ) break;
+
+        // increase the number of threads waiting for the unmount event
+        mutex_part_unmounted_cnt++;
+
+        // release the exclusive access mutex
         mutex_excl.unlock();
+
+        // wait for the partition unmount event
+        mutex_part_unmounted.lock();
+
+        // the thread only reaches this point when some other thread wakes this thread up
+        // the other thread didn't release its exclusive access, which means that this thread continues with exclusive access (transfered implicitly by the other thread)
+
+        // decrease the number of threads waiting for unmount event
+        mutex_part_unmounted_cnt--;
     }
+
+    // if the filesystem is up for destruction
+    if( up_for_destruction )
+    {
+        // 1. if there is a thread waiting for <all files closed> wake it up, otherwise
+        // 2. if there is a thread waiting for <partition unmount> wake it up, otherwise
+        // 3. wake up the thread that waited to <destroy the partitition>
+        if     ( mutex_all_files_closed_cnt > 0 ) { mutex_all_files_closed  .unlock(); }
+        else if( mutex_part_unmounted_cnt   > 0 ) { mutex_part_unmounted    .unlock(); }
+        else                                      { mutex_no_threads_waiting.unlock(); }
+
+        // prevent the operation from executing (even if the thread waited)
+        return MFS_DESTROY;
+    }
+
+    // unconditionally mount the given partition
+    MFS status = mount_uc(partition);
+    
+    // release exclusive access
+    mutex_excl.unlock();
 
     // at this point this thread doesn't have exclusive access to the filesystem class
     // so it shouldn't do anything thread-unsafe (e.g. read the filesystem class state, ...)
@@ -199,17 +157,24 @@ MFS KFS::unmount()
     return status;
 }
 
-// wait until all the open files on the partition are closed
-// format the mounted partition, if there is no mounted partition return an error
-MFS KFS::format()
+// wait until [all open files on the partition are closed]
+// unmount the partition from the filesystem
+// wake up a single! thread that waited for [all files the partition to be closed] or to [mount a partition], in this exact order!
+MFS KFS::unmount()
 {
     // obtain exclusive access to the filesystem class instance
     mutex_excl.lock();
+
+    // prevent the opening of new files
+    prevent_open = true;
 
     // loop until the blocking condition is false
     // if there is already a mounted partition and there are open files, make this thread wait until all the files on it are closed
     while( part != nullptr && !open_files.empty() )
     {
+        // if the filesystem is up for destruction, skip the blocking condition
+        if( up_for_destruction ) break;
+
         // increase the number of threads waiting for the all files closed event
         mutex_all_files_closed_cnt++;
 
@@ -226,11 +191,89 @@ MFS KFS::format()
         mutex_all_files_closed_cnt--;
     }
 
+    // if the filesystem is up for destruction
+    if( up_for_destruction )
+    {
+        // 1. if there is a thread waiting for <all files closed> wake it up, otherwise
+        // 2. if there is a thread waiting for <partition unmount> wake it up, otherwise
+        // 3. wake up the thread that waited to <destroy the partitition>
+        if     ( mutex_all_files_closed_cnt > 0 ) { mutex_all_files_closed  .unlock(); }
+        else if( mutex_part_unmounted_cnt   > 0 ) { mutex_part_unmounted    .unlock(); }
+        else                                      { mutex_no_threads_waiting.unlock(); }
+
+        // prevent the operation from executing (even if the thread waited)
+        return MFS_DESTROY;
+    }
+
+    // unconditionally unmount the given partition
+    MFS status = unmount_uc();
+
+    // 1. if there is a thread waiting for <all files closed event> wake it up, otherwise
+    // 2. if there is a thread waiting for <partition unmounted> wake it up, otherwise
+    // 3. remove the file opening prevention policy and <release exclusive access>
+    if     ( mutex_all_files_closed_cnt > 0 ) {                       mutex_all_files_closed.unlock(); }
+    else if( mutex_part_unmounted_cnt   > 0 ) {                       mutex_part_unmounted  .unlock(); }
+    else                                      { prevent_open = false; mutex_excl            .unlock(); }
+
+    // at this point this thread doesn't have exclusive access to the filesystem class
+    // so it shouldn't do anything thread-unsafe (e.g. read the filesystem class state, ...)
+
+    // return the operation status
+    return status;
+}
+
+// wait until [all open files on the partition are closed]
+// format the mounted partition, if there is no mounted partition return an error
+// wake up a single thread that waited for [all open files on the partition to be closed]
+MFS KFS::format()
+{
+    // obtain exclusive access to the filesystem class instance
+    mutex_excl.lock();
+
+    // loop until the blocking condition is false
+    // if there is already a mounted partition and there are open files, make this thread wait until all the files on it are closed
+    while( part != nullptr && !open_files.empty() )
+    {
+        // if the filesystem is up for destruction, skip the blocking condition
+        if( up_for_destruction ) break;
+
+        // increase the number of threads waiting for the all files closed event
+        mutex_all_files_closed_cnt++;
+
+        // release the exclusive access mutex
+        mutex_excl.unlock();
+
+        // wait for the all files closed event
+        mutex_all_files_closed.lock();
+
+        // the thread only reaches this point when some other thread wakes this thread up
+        // the other thread didn't release its exclusive access, which means that this thread continues with exclusive access (transfered implicitly by the other thread)
+
+        // decrease the number of threads waiting for the all files closed event
+        mutex_all_files_closed_cnt--;
+    }
+
+    // if the filesystem is up for destruction
+    if( up_for_destruction )
+    {
+        // 1. if there is a thread waiting for <all files closed> wake it up, otherwise
+        // 2. if there is a thread waiting for <partition unmount> wake it up, otherwise
+        // 3. wake up the thread that waited to <destroy the partitition>
+        if     ( mutex_all_files_closed_cnt > 0 ) { mutex_all_files_closed  .unlock(); }
+        else if( mutex_part_unmounted_cnt   > 0 ) { mutex_part_unmounted    .unlock(); }
+        else                                      { mutex_no_threads_waiting.unlock(); }
+
+        // prevent the operation from executing (even if the thread waited)
+        return MFS_DESTROY;
+    }
+
     // unconditionally format the given partition
     MFS status = format_uc();
 
-    // release exclusive access
-    mutex_excl.unlock();
+    // 1. if there is a thread waiting for <all files closed event> wake it up, otherwise
+    // 2. <release exclusive access>
+    if  ( mutex_all_files_closed_cnt > 0 ) { mutex_all_files_closed.unlock(); }
+    else                                   { mutex_excl            .unlock(); }
 
     // at this point this thread doesn't have exclusive access to the filesystem class
     // so it shouldn't do anything thread-unsafe (e.g. read the filesystem class state, ...)
@@ -281,7 +324,7 @@ MFS32 KFS::getRootFileCount()
 
 
 
-// check if a file exists in the root directory on the mounted partition, if it does return the index of the directory block containing its file descriptor
+// check if a file exists in the root directory on the mounted partition
 MFS KFS::fileExists(const char* filepath)
 {
     // if the full file path is invalid, return an error code
@@ -293,7 +336,7 @@ MFS KFS::fileExists(const char* filepath)
     // create a traversal path
     Traversal t;
     // unconditionally check if the file exists (the traversal position is not needed)
-    MFS32 status = findFile_uc(filepath, t);
+    MFS status = findFile_uc(filepath, t);
 
     // release exclusive access
     mutex_excl.unlock();
@@ -305,7 +348,7 @@ MFS KFS::fileExists(const char* filepath)
     return status;
 }
 
-// wait until no one uses the file with the given full file path
+// wait until [no one uses the file with the given full file path]
 // open a file on the mounted partition with the given full file path (e.g. /myfile.cpp) and access mode ('r'ead, 'w'rite + read, 'a'ppend + read)
 // +   read and append fail if the file with the given full path doesn't exist
 // +   write will try to create a file before writing to it if the file doesn't exist
@@ -337,20 +380,28 @@ KFile::Handle KFS::openFile(const char* filepath, char mode)
         handle->mutex_file_closed_cnt--;
     }
 
-    // unconditionally try to open a file handle
-    handle = openFileHandle_uc(filepath, mode);
-
-    // if the handle couldn't be opened
-    if( !handle )
+    // if opening of new files is prevented
+    if( prevent_open )
     {
-        // release exclusive access
-        mutex_excl.unlock();
+        // unconditionally try to close the file
+        // IMPORTANT: this operation must succeed, otherwise there will be a deadlock!
+        closeFileHandle_uc(filepath);
+
+        // 1. if the handle exists and there is a thread waiting for <file closed> wake it up, otherwise
+        // 2. if all files have been closed and there is a thread waiting for <all files closed> wake it up, otherwise
+        // 3. <release exclusive access>
+        if     ( handle             && handle->mutex_file_closed_cnt > 0 ) { handle->mutex_file_closed.unlock(); }
+        else if( open_files.empty() && mutex_all_files_closed_cnt    > 0 ) { mutex_all_files_closed   .unlock(); }
+        else                                                               { mutex_excl               .unlock(); }
+
         // return nullptr
         return nullptr;
     }
 
-    // reserve the file handle with the given access mode
-    handle->reserveAccess_uc(mode);
+    // unconditionally try to open a file handle
+    handle = openFileHandle_uc(filepath, mode);
+    // if the handle has been opened, reserve the file handle with the given access mode
+    if( handle ) handle->reserveAccess_uc(mode);
 
     // release exclusive access
     mutex_excl.unlock();
@@ -363,7 +414,7 @@ KFile::Handle KFS::openFile(const char* filepath, char mode)
 }
 
 // close a file with the given full file path (e.g. /myfile.cpp)
-// wake up a single thread that waited to open the now closed file
+// wake up a single thread that waited to [open the now closed file]
 MFS KFS::closeFile(const char* filepath)
 {
     // obtain exclusive access to the filesystem class instance
@@ -372,27 +423,18 @@ MFS KFS::closeFile(const char* filepath)
     // unconditionally try to close the file
     MFS32 status = closeFileHandle_uc(filepath);
 
+    // if the operation was not successful, release exclusive access and return an error code
+    if( status != MFS_OK ) { mutex_excl.unlock(); return MFS_ERROR; }
+
     // find a file handle with the given path in the open file table
     KFile::Handle handle { getFileHandle_uc(filepath) };
 
-    // if the <opening of new files is forbidden>, <there are currently no open files in the open file table> and <there are threads waiting for the all files closed event>, then unblock one of them
-    if( prevent_open && open_files.empty() && mutex_all_files_closed_cnt > 0 )
-    {
-        // send an all files closed event
-        mutex_all_files_closed.unlock();
-    }
-    // if the <opening of new files is not forbidden> and <there are threads waiting for the file closed event>, then unblock one of them
-    else if( !prevent_open && handle && handle->mutex_file_closed_cnt > 0 )
-    {
-        // send a file closed event
-        handle->mutex_file_closed.unlock();
-    }
-    // otherwise
-    else
-    {
-        // release exclusive access
-        mutex_excl.unlock();
-    }
+    // 1. if the handle exists and there is a thread waiting for <file closed> wake it up, otherwise
+    // 2. if there are no open files and there is a thread waiting for <all files closed> wake it up, otherwise
+    // 3. release exclusive access
+    if     ( handle             && handle->mutex_file_closed_cnt > 0 ) { handle->mutex_file_closed.unlock(); }
+    else if( open_files.empty() && mutex_all_files_closed_cnt    > 0 ) { mutex_all_files_closed   .unlock(); }
+    else                                                               { mutex_excl               .unlock(); }
 
     // at this point this thread doesn't have exclusive access to the filesystem class
     // so it shouldn't do anything thread-unsafe (e.g. read the filesystem class state, ...)
@@ -411,15 +453,8 @@ MFS KFS::deleteFile(const char* filepath)
     // find a file handle with the given path in the open file table
     KFile::Handle handle { getFileHandle_uc(filepath) };
 
-    // if the handle is not empty, then there must be a thread using it
-    if( handle )
-    {
-        // release exclusive access
-        mutex_excl.unlock();
-
-        // return an error code
-        return MFS_ERROR;
-    }
+    // if the handle is not empty, then there must be a thread using it -- release exclusive access and return an error code
+    if( handle ) { mutex_excl.unlock(); return MFS_ERROR; }
 
     // unconditionally try to delete the file
     MFS32 status = deleteFile_uc(filepath);
@@ -443,9 +478,8 @@ MFS32 KFS::readFromFile(KFile& file, siz32 count, Buffer buffer)
     // obtain exclusive access to the filesystem class instance
     mutex_excl.lock();
 
-    // TODO: update-ovati file descriptor!
     // unconditionally try to read from the file
-    MFS32 status = readFromFile_uc(file.fdpos, file.seekpos, count, buffer);
+    MFS32 status = readFromFile_uc(file.fdpos, file.seekpos, count, buffer, file.fd);
 
     // release exclusive access
     mutex_excl.unlock();
@@ -464,9 +498,8 @@ MFS KFS::writeToFile(KFile& file, siz32 count, const Buffer buffer)
     // obtain exclusive access to the filesystem class instance
     mutex_excl.lock();
 
-    // TODO: update-ovati file descriptor!
     // unconditionally try to write to the file
-    MFS32 status = writeToFile_uc(file.fdpos, file.seekpos, count, buffer);
+    MFS32 status = writeToFile_uc(file.fdpos, file.seekpos, count, buffer, file.fd);
 
     // release exclusive access
     mutex_excl.unlock();
@@ -484,9 +517,8 @@ MFS KFS::truncateFile(KFile& file)
     // obtain exclusive access to the filesystem class instance
     mutex_excl.lock();
 
-    // TODO: update-ovati file descriptor!
     // unconditionally try to truncate the file
-    MFS32 status = truncateFile_uc(file.fdpos, file.seekpos);
+    MFS32 status = truncateFile_uc(file.fdpos, file.seekpos, file.fd);
 
     // release exclusive access
     mutex_excl.unlock();
@@ -525,7 +557,7 @@ MFS KFS::mount_uc(Partition* partition)
     part = partition;
     // check if the new partition is formatted
     // (the first two bits of the bit vector block have to be both set if the partition is formatted,
-    //  since the first block on the partition is always occupied by the bit vector, and the second by the root directory's first level index block)
+    // since the first block on the partition is always occupied by the bit vector, and the second by the root directory's first level index block)
     formatted = BITV.bitv.isTaken(BitvLocation) && BITV.bitv.isTaken(RootIndx1Location);
     // reset the previous file count to an invalid value
     filecnt = nullsiz32;
@@ -602,17 +634,6 @@ MFS KFS::isFormatted_uc()
 
     // return if the partition is formatted
     return (formatted) ? MFS_OK : MFS_NOK;
-}
-
-// check if the class instance is up for destruction
-// if it is, wake up a single thread that is waiting on any of the events, and when there are no more threads waiting on any event wake up the one that called the destructor
-MFS KFS::isUpForDestruction_uc()
-{
-    if( !up_for_destruction ) return MFS_NOK;
-    // TODO: napraviti
-
-    // return that the 
-    return MFS_OK;
 }
 
 // get the number of files in the root directory on the mounted partition
@@ -779,6 +800,8 @@ MFS KFS::freeBlocks_uc(const std::vector<idx32>& ids)
     // for every block that should be deallocated
     for( auto& idx : ids )
     {
+        // if the block to be deallocated is an invalid block, just skip it
+        if( idx == nullblk ) continue;
         // if the block to be deallocated is not in the general purpose block pool, return an error code
         if( idx < BlockPoolLocation || idx >= partsize ) return MFS_ERROR;
         // release the current block (mark it as free)
@@ -1181,7 +1204,7 @@ MFS KFS::createFile_uc(const char* filepath, char mode, Traversal& t, FileDescri
     if( t.status == MFS_OK )
     {
         // if the file truncation was successful, return the success code, otherwise return an error code
-        return ((t.status = truncateFile_uc(t, 0)) == MFS_OK) ? MFS_OK : MFS_ERROR;
+        return ((t.status = truncateFile_uc(t, 0, fd)) == MFS_OK) ? MFS_OK : MFS_ERROR;
     }
 
     // since the file doesn't exist in the root directory, try to allocate an empty file descriptor
@@ -1228,8 +1251,10 @@ MFS KFS::deleteFile_uc(const char* filepath)
     // if a file with the given path doesn't exist, return that the delete was successful
     if( t.status == MFS_NOK ) return t.status = MFS_OK;
 
+    // create a temporary file descriptor
+    FileDescriptor fd;
     // try to truncate the file, if the operation isn't successful return its status
-    if( (t.status = truncateFile_uc(t, 0)) != MFS_OK ) return t.status;
+    if( (t.status = truncateFile_uc(t, 0, fd)) != MFS_OK ) return t.status;
 
     // try to free the file descriptor in the root directory, if the operation isn't successful return its status
     if( (t.status = freeFileDesc_uc(t)) != MFS_OK ) return t.status;
@@ -1243,24 +1268,24 @@ MFS KFS::deleteFile_uc(const char* filepath)
 
 
 
-// read up to the requested number of bytes from the file starting from the given position into the given buffer, return the number of bytes read
+// read up to the requested number of bytes from the file starting from the given position into the given buffer, return the number of bytes read, return the updated file descriptor
 // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
-MFS32 KFS::readFromFile_uc(Traversal& t, siz32 pos, siz32 count, Buffer buffer)
+MFS32 KFS::readFromFile_uc(Traversal& t, siz32 pos, siz32 count, Buffer buffer, FileDescriptor& fd)
 {
     // TODO: napraviti
     return 0;
 }
 
-// write the requested number of bytes from the buffer into the file starting from the given position
+// write the requested number of bytes from the buffer into the file starting from the given position, return the updated file descriptor
 // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
-MFS KFS::writeToFile_uc(Traversal& t, siz32 pos, siz32 count, const Buffer buffer)
+MFS KFS::writeToFile_uc(Traversal& t, siz32 pos, siz32 count, const Buffer buffer, FileDescriptor& fd)
 {
     // TODO: napraviti
     return MFS_OK;
 }
 
-// throw away the file's contents starting from the given position until the end of the file (but keep the file descriptor in the filesystem)
-MFS KFS::truncateFile_uc(Traversal& t, siz32 pos)
+// throw away the file's contents starting from the given position until the end of the file (but keep the file descriptor in the filesystem), return the updated file descriptor
+MFS KFS::truncateFile_uc(Traversal& t, siz32 pos, FileDescriptor& fd)
 {
     // if the partition isn't formatted, return an error code
     if( !formatted ) return t.status = MFS_ERROR;
@@ -1271,7 +1296,7 @@ MFS KFS::truncateFile_uc(Traversal& t, siz32 pos)
     if( ( t.status = cache.readFromPart(part, t.loc[iBLOCK], DIRE) ) != MFS_OK ) return t.status;
     
     // get the file descriptor from the directory block
-    FileDescriptor fd = DIRE.dire.filedesc[t.ent[iBLOCK]];
+    fd = DIRE.dire.filedesc[t.ent[iBLOCK]];
 
     // if the start position for the truncation is outside the file, return an error code
     if( pos > fd.filesize ) return t.status = MFS_BADARGS;
@@ -1301,7 +1326,6 @@ MFS KFS::truncateFile_uc(Traversal& t, siz32 pos)
     t.status = MFS_NOK;
 
 
-    // start deallocating blocks
     // a do-while loop that always executes once (used because of the breaks -- if there was no loop surrounding the inner code, the code would be really messy)
     do
     {
@@ -1315,46 +1339,51 @@ MFS KFS::truncateFile_uc(Traversal& t, siz32 pos)
             break;
         }
 
+
+        // start deallocating blocks
         // TODO: popraviti
+        // TODO: treba update-ovati file descriptor indx!
 
         // if the file's index1 block couldn't be read, remember that an error occured
         if( cache.readFromPart(part, f.loc[iINDX1], INDX1) != MFS_OK ) t.status = MFS_ERROR;
 
         // for every entry in the file's index1 block
-        for( f.ent[iINDX1] = 0;   t.status == MFS_NOK;   f.ent[iINDX1]++ )
+        for( ;   t.status == MFS_NOK;   f.ent[iINDX1]++ )
         {
-            // if the entry doesn't point to a valid index2 block
-            if( (f.loc[iINDX2] = INDX1.indx.entry[f.ent[iINDX1]]) == nullblk )
+            // if its the first entry in the index1 block
+            if( f.ent[iINDX1] == 0 )
             {
+                // set the file descriptor general purpose index to point to the first level2 index block
+                fd.indx = INDX1.indx.entry[0];
+
                 // the index1 block should be deallocated
                 ids.push_back(f.loc[iINDX1]);
-
-                // return to the previous level of the traversal
-                break;
             }
+
+            // if the entry doesn't point to a valid index2 block, return to the previous level of the traversal
+            if( (f.loc[iINDX2] = INDX1.indx.entry[f.ent[iINDX1]]) == nullblk ) break;
 
             // if the current index2 block couldn't be read, remember that an error occured
             if( cache.readFromPart(part, f.loc[iINDX2], INDX2) != MFS_OK ) t.status = MFS_ERROR;
 
             // for every entry in the current index2 block
-            for( f.ent[iINDX2] = 0;   t.status == MFS_NOK;   f.ent[iINDX2]++ )
+            for( ;   t.status == MFS_NOK;   f.ent[iINDX2]++ )
             {
-                // if the entry doesn't point to a valid data block
-                if( (f.loc[iBLOCK] = INDX2.indx.entry[f.ent[iINDX2]]) == nullblk )
-                {
-                    // the index2 block should be deallocated
-                    ids.push_back(f.loc[iINDX2]);
+                // the index2 block should be deallocated
+                ids.push_back(f.loc[iINDX2]);
 
-                    // return to the previous level of the traversal
-                    break;
-                }
+                // if the entry doesn't point to a valid data block, return to the previous level of the traversal
+                if( (f.loc[iBLOCK] = INDX2.indx.entry[f.ent[iINDX2]]) == nullblk ) break;
 
-                // save the location of the data block in the block ids vector
+                // the data block should (definitely) be deallocated
                 ids.push_back(f.loc[iBLOCK]);
 
                 // 
                 if( --datablk_dealloc_cnt == 0 ) t.status = MFS_OK;
             }
+
+            // reset the index2 entry to zero
+            f.ent[iINDX2] = 0;
         }
     }
     // end of do-while loop that executes always once
@@ -1435,6 +1464,7 @@ KFile::Handle KFS::getFileHandle_uc(const char* filepath)
 }
 
 // close a file handle with the given full file path
+// this operation never fails
 MFS KFS::closeFileHandle_uc(const char* filepath)
 {
     // find a file handle with the given path in the filesystem open file table
