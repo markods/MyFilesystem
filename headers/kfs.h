@@ -143,12 +143,12 @@ private:
     // delete a file on the mounted partition given the full file path (e.g. /myfile.cpp)
     MFS deleteFile_uc(const char* filepath);
 
-    // read up to the requested number of bytes from the file starting from the given position into the given buffer, return the number of bytes read and the updated file descriptor
+    // read up to the requested number of bytes from the file starting from the given position into the given buffer, return the number of bytes read and the updated position
     // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
-    MFS32 readFromFile_uc(idx32 locDIRE, idx32 entDIRE, siz32 pos, siz32 count, Buffer buffer, FileDescriptor& fd);
-    // write the requested number of bytes from the buffer into the file starting from the given position, return the updated file descriptor
+    MFS32 readFromFile_uc(idx32 locDIRE, idx32 entDIRE, siz32& pos, siz32 count, Buffer buffer, FileDescriptor& fd);
+    // write the requested number of bytes from the buffer into the file starting from the given position, return the updated position and file descriptor
     // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
-    MFS writeToFile_uc(idx32 locDIRE, idx32 entDIRE, siz32 pos, siz32 count, const Buffer buffer, FileDescriptor& fd);
+    MFS writeToFile_uc(idx32 locDIRE, idx32 entDIRE, siz32& pos, siz32 count, const Buffer buffer, FileDescriptor& fd);
     // throw away the file's contents starting from the given position until the end of the file (but keep the file descriptor in the filesystem), return the updated file descriptor
     MFS truncateFile_uc(idx32 locDIRE, idx32 entDIRE, siz32 pos, FileDescriptor& fd);
 

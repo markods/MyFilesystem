@@ -1268,19 +1268,143 @@ MFS KFS::deleteFile_uc(const char* filepath)
 
 
 
-// read up to the requested number of bytes from the file starting from the given position into the given buffer, return the number of bytes read and the updated file descriptor
+// read up to the requested number of bytes from the file starting from the given position into the given buffer, return the number of bytes read and the updated position
 // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
-MFS32 KFS::readFromFile_uc(idx32 locDIRE, idx32 entDIRE, siz32 pos, siz32 count, Buffer buffer, FileDescriptor& fd)
+MFS32 KFS::readFromFile_uc(idx32 locDIRE, idx32 entDIRE, siz32& pos, siz32 count, Buffer buffer, FileDescriptor& fd)
 {
-    // TODO: napraviti -- treba update-ovati file descriptor!
-    return 0;
+    // if the partition isn't formatted, return an error code
+    if( !formatted ) return MFS_ERROR;
+    // if the number of bytes to be read is zero, return that the operation is successful
+    if( count == 0 ) return MFS_OK;
+    // create a status variable
+    MFS status;
+
+    // create a block that will hold the directory block that holds the file descriptor
+    Block DIRE;
+    // if the directory block holding the file descriptor couldn't be read, return an error code
+    if( ( status = cache.readFromPart(part, locDIRE, DIRE) ) != MFS_OK ) return status;
+    
+    // get the file descriptor from the directory block
+    fd = DIRE.dire.filedesc[entDIRE];
+    // if the start position for reading is outside the file, return an error code
+    if( pos >= fd.filesize ) return MFS_BADARGS;
+
+    // create a file seek position and initialize it to the given starting position
+    siz32 seek = pos;
+    // create a buffer write position and initialize it to zero
+    siz32 read = 0;
+
+    // make the number of bytes to be read be at most the number of available bytes (until the end of the file)
+    if( count > fd.filesize - pos ) count = fd.filesize - pos;
+    // reset the status of the entire operation
+    status = MFS_NOK;
+
+
+    // a do-while loop that always executes once (used because of the breaks -- if there was no loop surrounding the inner code, the code would be really messy)
+    do
+    {
+        // for all the requested bytes that fit into the file descriptor
+        for( ; seek < FileSizeT && count > 0; count-- )
+        {
+            // copy the byte from the file descriptor into the buffer
+            buffer[read++] = fd.byte[seek++];
+        }
+
+        // if all the requested bytes have been read, skip the next bit of code
+        if( count == 0 ) { status = MFS_OK; break; }
+
+        // create a traversal path for the file
+        Traversal f;
+        // initialize the file's traversal path <starting location>
+        f.init(fd.indx, fd.getDepth());
+        // initialize the traversal path <entries> to point to the first data block byte to be read
+        FileDescriptor::getTraversalEntries(seek, f);
+        // artificially initialize the <unused traversal entries> to zero (for the below algorithm to work for any file structure depth)
+        // only the traversal locations can be invalid (nullblk), meaning that the file structure block at that level doesn't exist
+        if( f.ent[iINDX1] == nullblk ) f.ent[iINDX1] = 0;
+        if( f.ent[iINDX2] == nullblk ) f.ent[iINDX2] = 0;
+        if( f.ent[iBLOCK] == nullblk ) f.ent[iBLOCK] = 0;
+
+        // create two padded blocks
+        PaddedBlock paddedINDX1, paddedINDX2;
+        // initialize the paddings in the padded blocks
+        paddedINDX1.pad.entry = nullblk;
+        paddedINDX2.pad.entry = nullblk;
+        // create references to the block part of the padded blocks, and also create a data block
+        // the blocks will hold the file's index1 block, the current index2 block and the current data block during the traversal
+        Block& INDX1 { paddedINDX1.block };
+        Block& INDX2 { paddedINDX2.block };
+        Block  DATA;
+        // artificially initialize the first entries in the index blocks to be empty
+        // this is an important step, since then we can pretend that the file structure always has maximum depth (so that the algorithm below doesn't have to work differently for each possible file structure depth)
+        INDX1.indx.entry[0] = nullblk;
+        INDX2.indx.entry[0] = nullblk;
+
+
+        // read the remaining bytes into the buffer
+
+        // if the file's index1 block exists and it couldn't be read, remember that an error occured ######
+        if( f.loc[iINDX1] != nullblk && cache.readFromPart(part, f.loc[iINDX1], INDX1) != MFS_OK ) status = MFS_ERROR;
+
+        // for every entry in the file's (sometimes artificial) index1 block
+        for( ;   status == MFS_NOK;   f.ent[iINDX1]++ )
+        {
+            // if the index1 block exists and its entry doesn't point to a valid index2 block, return to the previous level of the traversal
+            if( f.loc[iINDX1] != nullblk && (f.loc[iINDX2] = INDX1.indx.entry[f.ent[iINDX1]]) == nullblk ) break;
+
+            // if the current index2 block exists and it couldn't be read, remember that an error occured ######
+            if( f.loc[iINDX2] != nullblk && cache.readFromPart(part, f.loc[iINDX2], INDX2) != MFS_OK ) status = MFS_ERROR;
+
+            // for every entry in the file's (sometimes artificial) current index2 block
+            for( ;   status == MFS_NOK;   f.ent[iINDX2]++ )
+            {
+                // if the index2 block exists and its entry doesn't point to a valid data block, return to the previous level of the traversal
+                if( f.loc[iINDX2] != nullblk && (f.loc[iBLOCK] = INDX2.indx.entry[f.ent[iINDX2]]) == nullblk ) break;
+
+                // if the current data block exists and it couldn't be read, remember that an error occured ######
+                // FIXME: the data should be read directly into the buffer, but this is currently not possible since the cache's read function requires a data block as the destination (not a buffer -- char*), and a conversion from buffer to data block is not possible
+                if( f.loc[iBLOCK] != nullblk && cache.readFromPart(part, f.loc[iBLOCK], DATA) != MFS_OK ) status = MFS_ERROR;
+
+                // for every requested byte in the file's current data block
+                for( ;   f.ent[iBLOCK] < DataBlock::Size && status == MFS_NOK;   f.ent[iBLOCK]++ )
+                {
+                    // copy the byte from the data block into the buffer
+                    buffer[read++] = DATA.data.byte[f.ent[iBLOCK]];
+
+                    // increment the seek position
+                    seek++;
+
+                    // if all the requested bytes have been read, finish the read operation
+                    if( --count == 0 ) status = MFS_OK;
+                }
+
+                // reset the data entry to zero
+                f.ent[iBLOCK] = 0;
+            }
+
+            // reset the index2 entry to zero
+            f.ent[iINDX2] = 0;
+        }
+    }
+    // end of do-while loop that always executes once
+    while( false );
+
+    // if the operation wasn't successful, return its status code
+    if( status != MFS_OK ) return status;
+
+
+    // save the new seek position in the given starting position variable
+    pos = seek;
+
+    // return the number of bytes read
+    return read;
 }
 
-// write the requested number of bytes from the buffer into the file starting from the given position, return the updated file descriptor
+// write the requested number of bytes from the buffer into the file starting from the given position, return the updated position and file descriptor
 // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
-MFS KFS::writeToFile_uc(idx32 locDIRE, idx32 entDIRE, siz32 pos, siz32 count, const Buffer buffer, FileDescriptor& fd)
+MFS KFS::writeToFile_uc(idx32 locDIRE, idx32 entDIRE, siz32& pos, siz32 count, const Buffer buffer, FileDescriptor& fd)
 {
-    // TODO: napraviti -- treba update-ovati file descriptor indx!
+    // TODO: napraviti -- treba update-ovati file descriptor size i indx!
     return MFS_OK;
 }
 
