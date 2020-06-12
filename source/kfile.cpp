@@ -15,15 +15,16 @@
 // THREAD.SAFE.PUBLIC.INTERFACE...THREAD.SAFE.PUBLIC.INTERFACE...THREAD.SAFE.PUBLIC.INTERFACE...THREAD.SAFE.PUBLIC.INTERFACE...THREAD.SAFE.PUBLI
 
 // construct the file object, only the filesystem can create a file
-KFile::KFile(Traversal& _fdpos, FileDescriptor& _fd)
+KFile::KFile(idx32 _locDIRE, idx32 _entDIRE, FileDescriptor& _fd)
 {
     // add the forward slash to make the path absolute (hack, but works since there is only one directory -- the root directory /)
     filepath[0] = '/';
     // overwrite the full file name after the forward slash in the file path
     fd.getFullName(&filepath[1]);
 
-    // save the file descriptor position in the directory
-    fdpos = _fdpos;
+    // save the file descriptor position in the directory block
+    locDIRE = _locDIRE;
+    entDIRE = _entDIRE;
 
     // save the file descriptor
     fd = _fd;

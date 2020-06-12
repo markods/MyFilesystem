@@ -133,8 +133,8 @@ MFS FileDescriptor::getResizeBlockDelta(siz32 filesize_curr, siz32 filesize_next
 
 
 
-// fill the entries in the traversal path pointing to the given position in the file
-MFS FileDescriptor::getEntries(siz32 pos, Traversal& f)
+// get the entries in the traversal path pointing to the given position in the file
+MFS FileDescriptor::getTraversalEntries(siz32 pos, Traversal& f)
 {
     // if the given position is outside the largest file size, return an error code
     if( pos >= FileSizeL ) return f.status = MFS_BADARGS;
@@ -154,71 +154,24 @@ MFS FileDescriptor::getEntries(siz32 pos, Traversal& f)
     return f.status = MFS_OK;
 }
 
-// make the entries in the traversal path point to the next block to the given one in the file (works for index and data block types)
-MFS FileDescriptor::getNextEntries(Traversal& f)
+// get the next data block start position from the given file position
+MFS FileDescriptor::getNextDataBlockStartPos(siz32& pos)
 {
-    // create variables that tell if the index for a specific block should be increased (the data block should be increased by default)
-    bool incBLOCK = true;
-    bool incINDX2 = false;
-    bool incINDX1 = false;
+    // if the given position is inside the last possible data block in a file or greater, return an error code
+    if( pos >= FileSizeL - DataBlkSize ) return MFS_BADARGS;
 
+    // if the position is inside the tiny file size, then there were no data blocks to begin with (the entire file up to the given position fits in the file descriptor), return the first data block position
+    if( pos < FileSizeT ) { pos = FileSizeT; return MFS_OK; }
 
-    // if the data block index is not invalid
-    if( f.ent[iBLOCK] != nullidx32 )
-    {
-        // if the data block index should be increased, and when increased if it is greater than the data block size
-        if( incBLOCK && ++f.ent[iBLOCK] >= DataBlkSize )
-        {
-            // reset the data block index to zero
-            f.ent[iBLOCK] = 0;
-
-            // save that the index2 block index should be increased
-            incINDX2;
-        }
-    }
-    // otherwise
-    else
-    {
-        // save that the index2 block index should be increased by default
-        incINDX2;
-    }
-
-
-    // if the index2 block index is not invalid
-    if( f.ent[iINDX2] != nullidx32 )
-    {
-        // if the index2 block index should be increased, and when increased if it is greater than the index block size
-        if( incINDX2 && ++f.ent[iINDX2] >= IndxBlkSize )
-        {
-            // reset the index2 block index to zero
-            f.ent[iINDX2] = 0;
-
-            // save that the index1 block index should be increased
-            incINDX1;
-        }
-    }
-    // otherwise
-    else
-    {
-        // save that the index1 block index should be increased by default
-        incINDX1;
-    }
-
-
-    // if the index1 block index is not invalid
-    if( f.ent[iINDX1] != nullidx32 )
-    {
-        // if the index1 block index should be increased, and when increased if it is greater than the index block size
-        if( incINDX1 && ++f.ent[iINDX1] >= IndxBlkSize )
-        {
-            // the file maximum has been overshot, return an error code
-            return f.status = MFS_BADARGS;
-        }
-    }
-
+    // temporarily remove the tiny file size offset from the position
+    pos -= FileSizeT;
+    // make the position point to the start of the current data block
+    pos -= pos % DataBlkSize;
+    // increase the position by the tiny file size offset and the data block size
+    pos += FileSizeT + DataBlkSize;
 
     // return that the operation was successful
-    return f.status = MFS_OK;
+    return MFS_OK;
 }
 
 
@@ -384,52 +337,6 @@ siz32 FileDescriptor::getDepth() const { siz32 depth; getDepth(filesize, depth);
 void FileDescriptor::getBlockCount(siz32& indx1_cnt, siz32& indx2_cnt, siz32& data_cnt) const { getBlockCount(filesize, indx1_cnt, indx2_cnt, data_cnt); }
 // get the number of blocks to be allocated/freed when changing from the current file size to the next file size
 MFS FileDescriptor::getResizeBlockDelta(siz32 filesize_next, int32& indx1_delta, int32& indx2_delta, int32& data_delta) const { return getResizeBlockDelta(filesize, filesize_next, indx1_delta, indx2_delta, data_delta); }
-
-
-
-// get the traversal path to the given position in the file
-MFS FileDescriptor::getDataBlock(siz32 pos, Traversal& f) const
-{
-    // initialize the traversal path
-    f.init(indx, getDepth());
-
-    // fill the entries in the traversal path (that points to the given position in the file)
-    getEntries(pos, f);
-
-    // return the operation status
-    return f.status;
-}
-
-// get the path to the next block using the given traversal path to the current block
-MFS FileDescriptor::getNextDataBlock(Traversal& f) const
-{
-    // reset the data block index to an invalid value, so that the 'get next entry' function calculates the next data block (and not the next data block entry!)
-    f.ent[iBLOCK] = nullidx32;
-    // get the next data block from the current one in the traversal
-    getNextEntries(f);
-    // set the data block index to zero (the first entry in the data block)
-    f.ent[iBLOCK] = 0;
-
-    // return the status of the operation
-    return f.status;
-}
-
-// get the traversal path to the first empty data block in the file
-MFS FileDescriptor::getFirstEmptyDataBlock(Traversal& f) const
-{
-    // get the traversal path to the last non-empty data block in the file
-    getDataBlock(filesize, f);
-
-    // reset the data block index to an invalid value, so that the 'get next entry' function calculates the next data block (and not the next data block entry!)
-    f.ent[iBLOCK] = nullidx32;
-    // get the next data block (the first completely empty data block), return the status of the operation
-    getNextEntries(f);
-    // set the data block index to zero (the first entry in the data block)
-    f.ent[iBLOCK] = 0;
-
-    // return the status of the operation
-    return f.status;
-}
 
 
 

@@ -27,7 +27,8 @@ public:
 
 private:
     char filepath[1 + FullFileNameSize]; // absolute path of the file
-    Traversal fdpos;                     // location of the file descriptor in the directory
+    idx32 locDIRE;                       // location of the directory block holding the file descriptor
+    idx32 entDIRE;                       // entry of the directory block that is this file descriptor
     FileDescriptor fd;                   // file descriptor for the file
 
     char mode { '\0' };                  // access mode ('r'ead, 'w'rite + read, 'a'ppend + read)
@@ -40,7 +41,7 @@ private:
 // ====== thread-safe public interface ======
 private:
     // construct the file object, only the filesystem can create a file
-    KFile(Traversal& fdpos, FileDescriptor& fd);
+    KFile(idx32 locDIRE, idx32 entDIRE, FileDescriptor& fd);
 
 public:
     // destruct the file object -- close the file handle, but don't delete the file from the filesystem!

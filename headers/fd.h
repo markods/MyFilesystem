@@ -38,12 +38,11 @@ public:
     static MFS getBlockCount(siz32 filesize, siz32& indx1_cnt, siz32& indx2_cnt, siz32& data_cnt);
     // get the number of blocks to be allocated/freed when changing from the given current file size to the given next file size
     static MFS getResizeBlockDelta(siz32 filesize_curr, siz32 filesize_next, int32& indx1_delta, int32& indx2_delta, int32& data_delta);
-
-private:
-    // fill the entries in the traversal path pointing to the given position in the file
-    static MFS getEntries(siz32 pos, Traversal& f);
-    // make the entries in the traversal path point to the next block to the given one in the file (works for index and data block types)
-    static MFS getNextEntries(Traversal& f);
+    
+    // get the entries in the traversal path pointing to the given position in the file
+    static MFS getTraversalEntries(siz32 pos, Traversal& f);
+    // get the next data block start position from the given file position
+    static MFS getNextDataBlockStartPos(siz32& pos);
 
 
 private:
@@ -74,13 +73,6 @@ public:
     void getBlockCount(siz32& indx1_cnt, siz32& indx2_cnt, siz32& data_cnt) const;
     // get the number of blocks to be allocated/freed when changing from the current file size to the next file size
     MFS getResizeBlockDelta(siz32 filesize_next, int32& indx1_delta, int32& indx2_delta, int32& data_delta) const;
-
-    // get the traversal path to the given position in the file
-    MFS getDataBlock(siz32 pos, Traversal& f) const;
-    // get the path to the next block using the given traversal path to the current block
-    MFS getNextDataBlock(Traversal& f) const;
-    // get the traversal path to the first empty data block in the file
-    MFS getFirstEmptyDataBlock(Traversal& f) const;
 
     // print the file descriptor to the output stream
     friend std::ostream& operator<<(std::ostream& os, const FileDescriptor& fd);
