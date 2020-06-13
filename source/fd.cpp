@@ -315,7 +315,7 @@ void FileDescriptor::reserve(const char* fname)
 void FileDescriptor::release()
 {
     resetFullName();   // clear the descriptor fields that hold the full filename
-    indx = nullblk;    // resetting multi purpose index of file to an invalid number
+    locBLOCK = nullblk;    // resetting multi purpose index of file to an invalid number
     filesize = 0;      // resetting filesize to zero
 
     // resetting first eight bytes of file
@@ -356,7 +356,7 @@ ostream& operator<<(ostream& os, const FileDescriptor& fd)
         << setw(FullFileNameSize-1) << left << fullname << right << ":fn "
         << hex
         << setw(uns32sz*bcw) << fd.filesize << ":B "
-        << setw(uns32sz*bcw) << fd.indx     << ":i1   ";
+        << setw(uns32sz*bcw) << fd.locBLOCK     << ":i1   ";
 
     // print the first couple of bytes of the file in the file descriptor
     os << setfill('0') << hex;

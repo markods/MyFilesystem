@@ -1121,8 +1121,9 @@ MFS KFS::findFile_uc(const char* filepath, Traversal& t)
 
 
     // start the search
+    // IMPORTANT: the 'status' variable ('ok status' when the file has been found) is the triple loop stopper!
 
-    // if the root directory's index1 block couldn't be read, remember that an error occured
+    // if the root directory's index1 block couldn't be read, remember that an error occured ######
     if( cache.readFromPart(part, t.loc[iINDX1], INDX1) != MFS_OK ) t.status = MFS_ERROR;
 
     // for every entry in the root directory's index1 block
@@ -1137,7 +1138,7 @@ MFS KFS::findFile_uc(const char* filepath, Traversal& t)
             break;
         }
 
-        // if the current index2 block couldn't be read, remember that an error occured
+        // if the current index2 block couldn't be read, remember that an error occured ######
         if( cache.readFromPart(part, t.loc[iINDX2], INDX2) != MFS_OK ) t.status = MFS_ERROR;
 
         // for every entry in the current index2 block
@@ -1152,7 +1153,7 @@ MFS KFS::findFile_uc(const char* filepath, Traversal& t)
                 break;
             }
 
-            // if the current directory block couldn't be read, remember that an error occured
+            // if the current directory block couldn't be read, remember that an error occured ######
             if( cache.readFromPart(part, t.loc[iBLOCK], DIRE) != MFS_OK ) t.status = MFS_ERROR;
 
             // for every file descriptor in the current directory block
@@ -1274,6 +1275,12 @@ MFS32 KFS::readFromFile_uc(idx32 locDIRE, idx32 entDIRE, siz32& pos, siz32 count
 {
     // if the partition isn't formatted, return an error code
     if( !formatted ) return MFS_ERROR;
+    // if the location of the directory block is not valid, return an error code
+    if( locDIRE == nullblk ) return MFS_BADARGS;
+    // if the entry holding the file descriptor is not valid, return an error code
+    if( entDIRE == nullidx32 ) return MFS_BADARGS;
+    // if the given buffer doesn't exist, return an error code
+    if( !buffer ) return MFS_BADARGS;
     // if the number of bytes to be read is zero, return that the operation is successful
     if( count == 0 ) return MFS_OK;
     // create a status variable
@@ -1282,7 +1289,7 @@ MFS32 KFS::readFromFile_uc(idx32 locDIRE, idx32 entDIRE, siz32& pos, siz32 count
     // create a block that will hold the directory block that holds the file descriptor
     Block DIRE;
     // if the directory block holding the file descriptor couldn't be read, return an error code
-    if( ( status = cache.readFromPart(part, locDIRE, DIRE) ) != MFS_OK ) return status;
+    if( cache.readFromPart(part, locDIRE, DIRE) != MFS_OK ) return MFS_ERROR;
     
     // get the file descriptor from the directory block
     fd = DIRE.dire.filedesc[entDIRE];
@@ -1306,7 +1313,7 @@ MFS32 KFS::readFromFile_uc(idx32 locDIRE, idx32 entDIRE, siz32& pos, siz32 count
         // for all the requested bytes that fit into the file descriptor
         for( ; seek < FileSizeT && count > 0; count-- )
         {
-            // copy the byte from the file descriptor into the buffer
+            // copy the byte from the file descriptor into the buffer and update the seek position
             buffer[read++] = fd.byte[seek++];
         }
 
@@ -1316,64 +1323,45 @@ MFS32 KFS::readFromFile_uc(idx32 locDIRE, idx32 entDIRE, siz32& pos, siz32 count
         // create a traversal path for the file
         Traversal f;
         // initialize the file's traversal path <starting location>
-        f.init(fd.indx, fd.getDepth());
+        f.init(fd.locBLOCK, fd.getDepth());
         // initialize the traversal path <entries> to point to the first data block byte to be read
         FileDescriptor::getTraversalEntries(seek, f);
         // artificially initialize the <unused traversal entries> to zero (for the below algorithm to work for any file structure depth)
         // only the traversal locations can be invalid (nullblk), meaning that the file structure block at that level doesn't exist
-        if( f.ent[iINDX1] == nullblk ) f.ent[iINDX1] = 0;
-        if( f.ent[iINDX2] == nullblk ) f.ent[iINDX2] = 0;
-        if( f.ent[iBLOCK] == nullblk ) f.ent[iBLOCK] = 0;
+        if( f.ent[iINDX1] == nullidx32 ) f.ent[iINDX1] = 0;
+        if( f.ent[iINDX2] == nullidx32 ) f.ent[iINDX2] = 0;
+        if( f.ent[iBLOCK] == nullidx32 ) f.ent[iBLOCK] = 0;
 
-        // create two padded blocks
-        PaddedBlock paddedINDX1, paddedINDX2;
-        // initialize the paddings in the padded blocks
-        paddedINDX1.pad.entry = nullblk;
-        paddedINDX2.pad.entry = nullblk;
-        // create references to the block part of the padded blocks, and also create a data block
-        // the blocks will hold the file's index1 block, the current index2 block and the current data block during the traversal
-        Block& INDX1 { paddedINDX1.block };
-        Block& INDX2 { paddedINDX2.block };
-        Block  DATA;
-        // artificially initialize the first entries in the index blocks to be empty
-        // this is an important step, since then we can pretend that the file structure always has maximum depth (so that the algorithm below doesn't have to work differently for each possible file structure depth)
-        INDX1.indx.entry[0] = nullblk;
-        INDX2.indx.entry[0] = nullblk;
+        // create blocks that will hold the file's index1 block, the current index2 block and the current data block during the traversal
+        Block INDX1, INDX2, DATA;
 
 
         // read the remaining bytes into the buffer
+        // IMPORTANT: the 'count' variable (the number of bytes still left to be read) is the triple loop stopper!
 
-        // if the file's index1 block exists and it couldn't be read, remember that an error occured ######
-        if( f.loc[iINDX1] != nullblk && cache.readFromPart(part, f.loc[iINDX1], INDX1) != MFS_OK ) status = MFS_ERROR;
+        // if the file's index1 block exists and it couldn't be read, remember that an error occured and skip the next bit of code ######
+        if( f.loc[iINDX1] != nullblk && cache.readFromPart(part, f.loc[iINDX1], INDX1) != MFS_OK ) { status = MFS_ERROR; break; }
 
         // for every entry in the file's (sometimes artificial) index1 block
         for( ;   status == MFS_NOK;   f.ent[iINDX1]++ )
         {
-            // if the index1 block exists and its entry doesn't point to a valid index2 block, return to the previous level of the traversal
-            if( f.loc[iINDX1] != nullblk && (f.loc[iINDX2] = INDX1.indx.entry[f.ent[iINDX1]]) == nullblk ) break;
-
-            // if the current index2 block exists and it couldn't be read, remember that an error occured ######
-            if( f.loc[iINDX2] != nullblk && cache.readFromPart(part, f.loc[iINDX2], INDX2) != MFS_OK ) status = MFS_ERROR;
+            // if the current index2 block exists and it couldn't be read, remember that an error occured and skip the next bit of code ######
+            if( f.loc[iINDX2] != nullblk && cache.readFromPart(part, f.loc[iINDX2], INDX2) != MFS_OK ) { status = MFS_ERROR; break; }
 
             // for every entry in the file's (sometimes artificial) current index2 block
             for( ;   status == MFS_NOK;   f.ent[iINDX2]++ )
             {
-                // if the index2 block exists and its entry doesn't point to a valid data block, return to the previous level of the traversal
-                if( f.loc[iINDX2] != nullblk && (f.loc[iBLOCK] = INDX2.indx.entry[f.ent[iINDX2]]) == nullblk ) break;
-
-                // if the current data block exists and it couldn't be read, remember that an error occured ######
+                // if the current data block exists and it couldn't be read, remember that an error occured and skip the next bit of code ######
                 // FIXME: the data should be read directly into the buffer, but this is currently not possible since the cache's read function requires a data block as the destination (not a buffer -- char*), and a conversion from buffer to data block is not possible
-                if( f.loc[iBLOCK] != nullblk && cache.readFromPart(part, f.loc[iBLOCK], DATA) != MFS_OK ) status = MFS_ERROR;
+                if( f.loc[iBLOCK] != nullblk && cache.readFromPart(part, f.loc[iBLOCK], DATA) != MFS_OK ) { status = MFS_ERROR; break; }
 
                 // for every requested byte in the file's current data block
                 for( ;   f.ent[iBLOCK] < DataBlock::Size && status == MFS_NOK;   f.ent[iBLOCK]++ )
                 {
                     // copy the byte from the data block into the buffer
                     buffer[read++] = DATA.data.byte[f.ent[iBLOCK]];
-
-                    // increment the seek position
+                    // update the seek position
                     seek++;
-
                     // if all the requested bytes have been read, finish the read operation
                     if( --count == 0 ) status = MFS_OK;
                 }
@@ -1385,12 +1373,15 @@ MFS32 KFS::readFromFile_uc(idx32 locDIRE, idx32 entDIRE, siz32& pos, siz32 count
             // reset the index2 entry to zero
             f.ent[iINDX2] = 0;
         }
+
+        // reset the index1 entry to zero
+        f.ent[iINDX1] = 0;
     }
     // end of do-while loop that always executes once
     while( false );
 
-    // if the operation wasn't successful, return its status code
-    if( status != MFS_OK ) return status;
+    // if the operation wasn't successful, return an error code
+    if( status != MFS_OK ) return MFS_ERROR;
 
 
     // save the new seek position in the given starting position variable
@@ -1400,12 +1391,179 @@ MFS32 KFS::readFromFile_uc(idx32 locDIRE, idx32 entDIRE, siz32& pos, siz32 count
     return read;
 }
 
-// write the requested number of bytes from the buffer into the file starting from the given position, return the updated position and file descriptor
+// write the requested number of bytes from the buffer into the file starting from the end-of-file position, return the updated position and file descriptor
 // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
 MFS KFS::writeToFile_uc(idx32 locDIRE, idx32 entDIRE, siz32& pos, siz32 count, const Buffer buffer, FileDescriptor& fd)
 {
-    // TODO: napraviti -- treba update-ovati file descriptor size i indx!
-    return MFS_OK;
+    // if the partition isn't formatted, return an error code
+    if( !formatted ) return MFS_ERROR;
+    // if the location of the directory block is not valid, return an error code
+    if( locDIRE == nullblk ) return MFS_BADARGS;
+    // if the entry holding the file descriptor is not valid, return an error code
+    if( entDIRE == nullidx32 ) return MFS_BADARGS;
+    // if the given buffer doesn't exist, return an error code
+    if( !buffer ) return MFS_BADARGS;
+    // if the number of bytes to be written is zero, return that the operation is successful
+    if( count == 0 ) return MFS_OK;
+    // if the number of bytes to be written is greater than the maximum currently available, return an error code
+    if( count > FileSizeL - fd.filesize ) return MFS_ERROR;
+    // create a status variable
+    MFS status;
+
+    // create a block that will hold the directory block that holds the file descriptor
+    Block DIRE;
+    // if the directory block holding the file descriptor couldn't be read, return an error code
+    if( cache.readFromPart(part, locDIRE, DIRE) != MFS_OK ) return MFS_ERROR;
+
+    // get the file descriptor from the directory block
+    fd = DIRE.dire.filedesc[entDIRE];
+    // if the write starting position is not at the end of the file, return an error code
+    if( pos != fd.filesize ) return MFS_BADARGS;
+
+    // create variables that will hold the number of block to be allocated per level for the file
+    int32 indx1_delta, indx2_delta, data_delta;
+    // calculate the number of blocks to be allocated for all file structure levels (the numbers will be zero or positive since the new file size is greater than the previous one)
+    fd.getResizeBlockDelta(fd.filesize + count, indx1_delta, indx2_delta, data_delta);
+
+    // create a vector for holding ids of blocks to be allocated
+    std::vector<idx32> ids;
+    // if the allocation was not successful, return an error code
+    if( alocBlocks_uc(indx1_delta + indx2_delta + data_delta, ids) != MFS_OK ) return MFS_ERROR;
+
+    // create an index that tells the index of the first not-yet-used allocated block and initialize it to zero
+    siz32 iids = 0;
+    // create a file seek position and initialize it to the given starting position
+    siz32 seek = pos;
+    // create a buffer read position and initialize it to zero
+    siz32 read = 0;
+
+    // reset the status of the entire operation
+    status = MFS_NOK;
+
+
+    // a do-while loop that always executes once (used because of the breaks -- if there was no loop surrounding the inner code, the code would be really messy)
+    do
+    {
+        // for all the bytes in the buffer that fit into the file descriptor
+        for( ; seek < FileSizeT && count > 0; count-- )
+        {
+            // copy the byte from the buffer into the file descriptor and update the seek position
+            fd.byte[seek++] = buffer[read++];
+        }
+
+        // if all the given bytes have been written, skip the next bit of code
+        if( count == 0 ) { status = MFS_OK; break; }
+
+        // create a traversal path for the file
+        Traversal f;
+        // initialize the file's traversal path <starting location>
+        f.init(fd.locBLOCK, fd.getDepth());
+        // initialize the traversal path <entries> to point to the first data block byte to be written to
+        FileDescriptor::getTraversalEntries(seek, f);
+        // artificially initialize the <unused traversal entries> to zero (for the below algorithm to work for any file structure depth)
+        // only the traversal locations can be invalid (nullblk), meaning that the file structure block at that level doesn't exist
+        if( f.ent[iINDX1] == nullidx32 ) f.ent[iINDX1] = 0;
+        if( f.ent[iINDX2] == nullidx32 ) f.ent[iINDX2] = 0;
+        if( f.ent[iBLOCK] == nullidx32 ) f.ent[iBLOCK] = 0;
+
+        // create blocks that will hold the file's index1 block, the current index2 block and the current data block during the traversal
+        Block INDX1, INDX2, DATA;
+
+        // reset the file descriptor's general purpose index to an invalid value
+        fd.locBLOCK = nullblk;
+
+
+        // write the remaining bytes into the file
+        // IMPORTANT: the 'count' variable (the number of bytes still left to be written) is the triple loop stopper!
+
+        // TODO: napraviti
+
+        // if the file's index1 block exists and it couldn't be read, remember that an error occured and skip the next bit of code ######
+        if( f.loc[iINDX1] != nullblk && cache.readFromPart(part, f.loc[iINDX1], INDX1) != MFS_OK ) { status = MFS_ERROR; break; }
+
+        // if the file's index1 block should exist but it doesn't
+        if( f.loc[iINDX1] == nullblk && --indx1_delta >= 0 )
+        {
+            // get a block from the allocation list
+            f.loc[iINDX1] = ids.at(iids++);
+            // if the file descriptor's general purpose index is invalid, make it point to the index1 block
+            if( fd.locBLOCK == nullblk ) fd.locBLOCK = f.loc[iINDX1];
+        }
+
+        // for every entry in the file's (sometimes artificial) index1 block
+        for( ;   f.ent[iINDX1] < IndexBlock::Size && status == MFS_NOK;   f.ent[iINDX1]++ )
+        {
+            // if the file's current index2 block exists and it couldn't be read, remember that an error occured and skip the next bit of code ######
+            if( f.loc[iINDX2] != nullblk && cache.readFromPart(part, f.loc[iINDX2], INDX2) != MFS_OK ) { status = MFS_ERROR; break; }
+
+            // if the file's current index2 block should exist but it doesn't
+            if( f.loc[iINDX2] == nullblk && --indx2_delta >= 0 )
+            {
+                // get a block from the allocation list
+                f.loc[iINDX2] = ids.at(iids++);
+                // if the file descriptor's general purpose index is invalid, make it point to the index2 block
+                if( fd.locBLOCK == nullblk ) fd.locBLOCK = f.loc[iINDX2];
+            }
+
+            // for every entry in the file's (sometimes artificial) current index2 block
+            for( ;   f.ent[iINDX2] < IndexBlock::Size && status == MFS_NOK;   f.ent[iINDX2]++ )
+            {
+                // if the file's current data block exists and it couldn't be read, remember that an error occured and skip the next bit of code ######
+                if( f.loc[iBLOCK] != nullblk && cache.readFromPart(part, f.loc[iINDX2], INDX2) != MFS_OK ) { status = MFS_ERROR; break; }
+
+                // if the file's current data block should exist but it doesn't
+                if( f.loc[iBLOCK] == nullblk && --data_delta >= 0 )
+                {
+                    // get a block from the allocation list
+                    f.loc[iINDX2] = ids.at(iids++);
+                    // if the file descriptor's general purpose index is invalid, make it point to the index2 block
+                    if( fd.locBLOCK == nullblk ) fd.locBLOCK = f.loc[iINDX2];
+                }
+
+
+
+                // if there are no more data blocks for deallocation, finish the deallocation
+                if( --data_delta == 0 ) status = MFS_OK;
+
+                // reset the data entry to zero
+                f.ent[iBLOCK] = 0;
+            }
+
+            // reset the index2 entry to zero
+            f.ent[iINDX2] = 0;
+        }
+
+        // reset the index1 entry to zero
+        f.ent[iINDX1] = 0;
+    }
+    // end of do-while loop that always executes once
+    while( false );
+
+
+    // save the new file size in the file descriptor
+    // it is important to do this step here, after the traversal path has been initialized (since the file structure depth depends on the file size)
+    fd.filesize += count;
+    // update the file descriptor in the directory block
+    DIRE.dire.filedesc[entDIRE] = fd;
+
+    // if the write to the file was successful and the write of the file descriptor to the cache is successful
+    if( status == MFS_OK && cache.writeToPart(part, locDIRE, DIRE) == MFS_OK )
+    {
+        // save the new seek position in the given starting position variable
+        pos = seek;
+
+        // return that the operation was successful
+        return MFS_OK;
+    }
+
+    // since the operation has failed, try to deallocate all the blocks that were previously allocated
+    // FIXME: if this deallocation fails, the filesystem bit vector is corrupt
+    //        currently there is no way to guarantee atomicity of all filesystem operations, since journalling isn't implemented
+    //        therefore we could permanently lose many blocks on the partition :(
+    freeBlocks_uc(ids);
+
+    // return an error code
+    return MFS_ERROR;
 }
 
 // throw away the file's contents starting from the given position until the end of the file (but keep the file descriptor in the filesystem), return the updated file descriptor
@@ -1413,13 +1571,17 @@ MFS KFS::truncateFile_uc(idx32 locDIRE, idx32 entDIRE, siz32 pos, FileDescriptor
 {
     // if the partition isn't formatted, return an error code
     if( !formatted ) return MFS_ERROR;
+    // if the location of the directory block is not valid, return an error code
+    if( locDIRE == nullblk ) return MFS_BADARGS;
+    // if the entry holding the file descriptor is not valid, return an error code
+    if( entDIRE == nullidx32 ) return MFS_BADARGS;
     // create a status variable
     MFS status;
 
     // create a block that will hold the directory block that holds the file descriptor
     Block DIRE;
     // if the directory block holding the file descriptor couldn't be read, return an error code
-    if( ( status = cache.readFromPart(part, locDIRE, DIRE) ) != MFS_OK ) return status;
+    if( cache.readFromPart(part, locDIRE, DIRE) != MFS_OK ) return MFS_ERROR;
     
     // get the file descriptor from the directory block
     fd = DIRE.dire.filedesc[entDIRE];
@@ -1430,8 +1592,12 @@ MFS KFS::truncateFile_uc(idx32 locDIRE, idx32 entDIRE, siz32 pos, FileDescriptor
 
     // create variables that will hold the number of block to be deallocated per level for the file
     int32 indx1_delta, indx2_delta, data_delta;
-    // calculate the number of blocks to be deallocated for all file structure levels
+    // calculate the number of blocks to be deallocated for all file structure levels (the numbers will be zero or negative since the new file size is smaller than the previous one)
     fd.getResizeBlockDelta(pos, indx1_delta, indx2_delta, data_delta);
+    // flip the signs for the deltas
+    indx1_delta = -indx1_delta;
+    indx2_delta = -indx2_delta;
+     data_delta =  -data_delta;
 
     // create a vector for holding ids of blocks to be deallocated
     std::vector<idx32> ids;
@@ -1446,121 +1612,86 @@ MFS KFS::truncateFile_uc(idx32 locDIRE, idx32 entDIRE, siz32 pos, FileDescriptor
         // if there are no data blocks to be deallocated, set that the deallocation was successful and skip the next bit of code
         if( data_delta == 0 ) { status = MFS_OK; break; }
 
-        // the position in the file of the first data block to be deallocated
-        siz32 first_datablk_for_dealloc_pos;
-        // initialize it with the last byte of the file (pos-1 is the last byte of the soon to be truncated file) that belongs to a data block (the position of truncation must be greater than the tiny file size that doesn't even have a data block)
-        first_datablk_for_dealloc_pos = ( pos > FileSizeT ) ? pos-1 : 0;
-        // find the position in the file of the first data block to be deallocated
-        FileDescriptor::getNextDataBlockStartPos(first_datablk_for_dealloc_pos);
-
         // create a traversal path for the file
         Traversal f;
         // initialize the file's traversal path <starting location>
-        f.init(fd.indx, fd.getDepth());
-        // initialize the traversal path <entries> to point to the first data block to be deallocated
-        FileDescriptor::getTraversalEntries(first_datablk_for_dealloc_pos, f);
+        f.init(fd.locBLOCK, fd.getDepth());
+        // initialize the traversal path <entries> to point to the last byte of the file -- the first data block to be deallocated (they are deallocated in reverse)
+        FileDescriptor::getTraversalEntries(fd.filesize-1, f);
         // artificially initialize the <unused traversal entries> to zero (for the below algorithm to work for any file structure depth)
         // only the traversal locations can be invalid (nullblk), meaning that the file structure block at that level doesn't exist
-        if( f.ent[iINDX1] == nullblk ) f.ent[iINDX1] = 0;
-        if( f.ent[iINDX2] == nullblk ) f.ent[iINDX2] = 0;
-        if( f.ent[iBLOCK] == nullblk ) f.ent[iBLOCK] = 0;
-        // create a variable that will hold the (artificial) file structure depth
-        int32 depth = MaxDepth;
+        if( f.ent[iINDX1] == nullidx32 ) f.ent[iINDX1] = 0;
+        if( f.ent[iINDX2] == nullidx32 ) f.ent[iINDX2] = 0;
+        if( f.ent[iBLOCK] == nullidx32 ) f.ent[iBLOCK] = 0;
 
-        // create two padded blocks
-        PaddedBlock paddedINDX1, paddedINDX2;
-        // initialize the paddings in the padded blocks
-        paddedINDX1.pad.entry = nullblk;
-        paddedINDX2.pad.entry = nullblk;
-        // create references to the block part of the padded blocks
-        // the blocks will hold the file's level1 index block and the current level2 index block during the traversal
-        Block& INDX1 { paddedINDX1.block };
-        Block& INDX2 { paddedINDX2.block };
-        // artificially initialize the first entries in the index blocks to be empty
-        // this is an important step, since then we can pretend that the file structure always has maximum depth (so that the algorithm below doesn't have to work differently for each possible file structure depth)
-        INDX1.indx.entry[0] = nullblk;
-        INDX2.indx.entry[0] = nullblk;
-
-        // update the file descriptor -- save the new file size
-        fd.filesize = pos;
+        // create blocks that will hold the file's level1 index block and the current level2 index block during the traversal
+        Block INDX1, INDX2;
 
 
-        // find all blocks to be deallocated
+        // find all blocks to be deallocated starting from the end of the file
+        // IMPORTANT: the 'data delta' variable (the number of data blocks to be deallocated) is the double loop stopper!
 
-        // if the file's index1 block exists and it couldn't be read, remember that an error occured ######
-        if( f.loc[iINDX1] != nullblk && cache.readFromPart(part, f.loc[iINDX1], INDX1) != MFS_OK ) status = MFS_ERROR;
+        // if the file's index1 block exists and it couldn't be read, remember that an error occured and skip the next bit of code ######
+        if( f.loc[iINDX1] != nullblk && cache.readFromPart(part, f.loc[iINDX1], INDX1) != MFS_OK ) { status = MFS_ERROR; break; }
+
+        // if the index1 block should be deallocated
+        if( --indx1_delta >= 0 )
+        {
+            // save that the index1 block should be deallocated
+            ids.push_back(f.loc[iINDX1]);
+            // if the file descriptor's general purpose index is pointing to this index1 block, point it to the first index2 block
+            if( fd.locBLOCK == f.loc[iINDX1] ) fd.locBLOCK = INDX1.indx.entry[0];
+        }
 
         // for every entry in the file's (sometimes artificial) index1 block
-        for( ;   status == MFS_NOK;   f.ent[iINDX1]++ )
+        for( ;   f.ent[iINDX1] >= 0 && status == MFS_NOK;   f.ent[iINDX1]-- )
         {
-            // if the <structure depth is three>, the search started from the <first entry> in the index1 block and the index1 block <exists>
-            if( depth == (1 + iINDX1) && f.ent[iINDX1] == 0 && f.loc[iINDX1] != nullblk )
+            // if the current index2 block exists and it couldn't be read, remember that an error occured and skip the next bit of code ######
+            if( f.loc[iINDX2] != nullblk && cache.readFromPart(part, f.loc[iINDX2], INDX2) != MFS_OK ) { status = MFS_ERROR; break; }
+
+            // if the index2 block should be deallocated
+            if( --indx2_delta >= 0 )
             {
-                // save that the index1 block should be deallocated
-                ids.push_back(f.loc[iINDX1]);
-                // set the file descriptor general purpose index to point to the first index2 block
-                fd.indx = INDX1.indx.entry[0];
-                // decrease the file structure depth
-                depth--;
+                // save that the index2 block should be deallocated
+                ids.push_back(f.loc[iINDX2]);
+                // if the file descriptor's general purpose index is pointing to this index2 block, point it to the first data block
+                if( fd.locBLOCK == f.loc[iINDX2] ) fd.locBLOCK = INDX2.indx.entry[0];
             }
 
-            // if the index1 block exists and its entry doesn't point to a valid index2 block, return to the previous level of the traversal
-            if( f.loc[iINDX1] != nullblk && (f.loc[iINDX2] = INDX1.indx.entry[f.ent[iINDX1]]) == nullblk ) break;
-
-
-            // if the current index2 block exists and it couldn't be read, remember that an error occured ######
-            if( f.loc[iINDX2] != nullblk && cache.readFromPart(part, f.loc[iINDX2], INDX2) != MFS_OK ) status = MFS_ERROR;
-
             // for every entry in the file's (sometimes artificial) current index2 block
-            for( ;   status == MFS_NOK;   f.ent[iINDX2]++ )
+            for( ;   f.ent[iINDX2] >= 0 && status == MFS_NOK;   f.ent[iINDX2]-- )
             {
-                // if the <structure depth is two>, the search started from the <first or second entry> in the index2 block and the index2 block <exists>
-                if( depth == (1 + iINDX2) && f.ent[iINDX2] <= 1 && f.loc[iINDX2] != nullblk )
-                {
-                    // save that the index2 block should be deallocated
-                    ids.push_back(f.loc[iINDX2]);
-                    // set the file descriptor general purpose index to point to the first data block
-                    fd.indx = INDX2.indx.entry[0];
-                    // decrease the file structure depth
-                    depth--;
-
-                    // if the first data block in the file should be deallocated
-                    if( f.ent[iINDX2] == 0 )
-                    {
-                        // set the file descriptor general purpose index to an invalid value
-                        fd.indx = nullblk;
-                        // decrease the file structure depth
-                        depth--;
-                    }
-                }
-
-                // if the index2 block exists and its entry doesn't point to a valid data block, return to the previous level of the traversal
-                if( f.loc[iINDX2] != nullblk && (f.loc[iBLOCK] = INDX2.indx.entry[f.ent[iINDX2]]) == nullblk ) break;
-
-
                 // the data block should always be deallocated
                 ids.push_back(f.loc[iBLOCK]);
+                // if the file descriptor's general purpose index is pointing to this data block, set it to an invalid value
+                if( fd.locBLOCK == f.loc[iINDX2] ) fd.locBLOCK = nullblk;
 
                 // if there are no more data blocks for deallocation, finish the deallocation
                 if( --data_delta == 0 ) status = MFS_OK;
             }
 
-            // reset the index2 entry to zero
-            f.ent[iINDX2] = 0;
+            // reset the index2 entry to the last entry
+            f.ent[iINDX2] = IndexBlock::Size-1;
         }
+
+        // reset the index1 entry to the last entry
+        f.ent[iINDX2] = IndexBlock::Size-1;
     }
     // end of do-while loop that always executes once
     while( false );
 
     // if the operation wasn't successful, return its status code
-    if( status != MFS_OK ) return status;
+    if( status != MFS_OK ) return MFS_ERROR;
 
 
+    // save the new file size in the file descriptor
+    // it is important to do this step here, after the traversal path has been initialized (since the file structure depth depends on the file size)
+    fd.filesize = pos;
     // update the file descriptor in the directory block
     DIRE.dire.filedesc[entDIRE] = fd;
 
     // if the write of the file descriptor to the cache wasn't successful, return its status code
-    if( ( status = cache.writeToPart(part, locDIRE, DIRE) ) != MFS_OK ) return status;
+    if( cache.writeToPart(part, locDIRE, DIRE) != MFS_OK ) return MFS_ERROR;
 
     // deallocate all the blocks that are not needed anymore (after the truncation)
     // FIXME: if this deallocation fails, the filesystem bit vector is corrupt
