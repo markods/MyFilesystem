@@ -21,7 +21,7 @@ private:
     char eos;                     // unused byte
 
 public:
-    idx32 locBLOCK;               // multi purpose index used as first level index/second level index/data block of file depending on the file size
+    idx32 locINDEX;               // multi purpose index used as first level index/second level index/data block of file depending on the file size
     siz32 filesize;               // size of file in bytes
 
     // 12 leftover bytes (in specification)
