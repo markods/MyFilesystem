@@ -6,8 +6,10 @@
 
 int MFS_TEST_01()
 {
+    std::cout << "==============================< TEST 01 >======" << std::endl;
+
     char partprefs[] = "p1.ini";
-    Partition partition(partprefs);
+    Partition partition { partprefs };
 
     Block bitv_blk;
     partition.readCluster(0, bitv_blk);
@@ -16,6 +18,7 @@ int MFS_TEST_01()
     Block indx_blk;
     partition.readCluster(1, indx_blk);
     std::cout << indx_blk.indx << std::endl;
-    
+
+    std::cout << "===============================================" << std::endl;
     return 0;
 }

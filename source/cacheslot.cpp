@@ -22,9 +22,17 @@ CacheSlot::CacheSlot(idx32 _slotidx)
 {
     // set slot index
     slotidx = _slotidx;
-    // TODO: ovde code analysis kaze da status i block id nisu inicijalizovani?
-    // initialize slot to its default values
-    init();
+    // set block id
+    blockid = nullblk;
+
+    // reset all slot status flags (since there are unused bits in the status variable)
+    status = 0UL;
+
+    // set default slot flags in slot status
+    setFree();
+    rstDirty();
+    rstReadFrom();
+    rstHitCount();
 }
 
 // initialize the slot with default values for its fields (except for the slot index in the cache, presumably that doesn't change when the slot is reinitialized)

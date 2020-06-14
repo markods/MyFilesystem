@@ -18,7 +18,7 @@ using namespace std;
 extern HANDLE nit1,nit2;
 extern DWORD ThreadID;
 
-extern HANDLE mutex;
+extern HANDLE _mutex;
 extern HANDLE semMain;
 extern HANDLE sem12;
 extern HANDLE sem21;

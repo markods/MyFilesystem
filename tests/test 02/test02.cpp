@@ -8,7 +8,7 @@ DWORD ThreadID;
 HANDLE semMain=CreateSemaphore(NULL,0,32,NULL);
 HANDLE sem12=CreateSemaphore(NULL,0,32,NULL);
 HANDLE sem21=CreateSemaphore(NULL,0,32,NULL);
-HANDLE mutex=CreateSemaphore(NULL,1,32,NULL);
+HANDLE _mutex=CreateSemaphore(NULL,1,32,NULL);
 
 Partition *partition;
 
@@ -16,14 +16,18 @@ char *ulazBuffer;
 int ulazSize;
 
 int MFS_TEST_02(){
-	clock_t startTime,endTime;
+    std::cout << "==============================< TEST 02 >======" << std::endl;
+
+    clock_t startTime,endTime;
 	cout<<"Pocetak testa!"<<endl;
 	startTime=clock();//pocni merenje vremena
 
 	{//ucitavamo ulazni fajl u bafer, da bi nit 1 i 2 mogle paralelno da citaju
-		FILE *f=fopen("ulaz.dat","rb");
+        #pragma warning(suppress : 4996)   // suppress the crt secure warning for the next line
+        FILE *f=fopen("p2.dat","rb");
+
 		if(f==0){
-			cout<<"GRESKA: Nije nadjen ulazni fajl 'ulaz.dat' u os domacinu!"<<endl;
+			cout<<"GRESKA: Nije nadjen ulazni fajl 'p2.dat' u os domacinu!"<<endl;
 			system("PAUSE");
 			return 0;//exit program
 		}
@@ -40,11 +44,13 @@ int MFS_TEST_02(){
 	endTime=clock();
 	cout<<"Kraj test primera!"<<endl;
 	cout<<"Vreme izvrsavanja: "<<((double)(endTime-startTime)/((double)CLOCKS_PER_SEC/1000.0))<<"ms!"<<endl;
-	CloseHandle(mutex);
+    CloseHandle(_mutex);
 	CloseHandle(semMain);
 	CloseHandle(sem12);
 	CloseHandle(sem21);
 	CloseHandle(nit1);
 	CloseHandle(nit2);
-	return 0;
+   
+    std::cout << "===============================================" << std::endl;
+    return 0;
 }

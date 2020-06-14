@@ -31,6 +31,7 @@
     <ClInclude Include="headers\kfs.h" />
     <ClInclude Include="headers\partition.h" />
     <ClInclude Include="headers\traversal.h" />
+    <ClInclude Include="tests\test 02\testprimer.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="source\block.cpp" />
@@ -45,6 +46,10 @@
     <ClCompile Include="source\kfs.cpp" />
     <ClCompile Include="source\main.cpp" />
     <ClCompile Include="source\traversal.cpp" />
+    <ClCompile Include="tests\test 01\test01.cpp" />
+    <ClCompile Include="tests\test 02\nit1.cpp" />
+    <ClCompile Include="tests\test 02\nit2.cpp" />
+    <ClCompile Include="tests\test 02\test02.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>15.0</VCProjectVersion>

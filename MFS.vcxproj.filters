@@ -9,6 +9,15 @@
       <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
       <Extensions>h;hh;hpp;hxx;hm;inl;inc;ipp;xsd</Extensions>
     </Filter>
+    <Filter Include="Tests">
+      <UniqueIdentifier>{675bb94e-e118-464d-9b1d-51323049a618}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Tests\Test 01">
+      <UniqueIdentifier>{d602d47e-b5fe-43b2-a372-569d1c6a46c6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Tests\Test 02">
+      <UniqueIdentifier>{20c3db12-ef59-4920-955d-8ef11be98e2a}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="headers\!global.h">
@@ -47,6 +56,9 @@
     <ClInclude Include="headers\traversal.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="tests\test 02\testprimer.h">
+      <Filter>Tests\Test 02</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="source\main.cpp">
@@ -84,6 +96,18 @@
     </ClCompile>
     <ClCompile Include="source\!global.cpp">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="tests\test 01\test01.cpp">
+      <Filter>Tests\Test 01</Filter>
+    </ClCompile>
+    <ClCompile Include="tests\test 02\test02.cpp">
+      <Filter>Tests\Test 02</Filter>
+    </ClCompile>
+    <ClCompile Include="tests\test 02\nit1.cpp">
+      <Filter>Tests\Test 02</Filter>
+    </ClCompile>
+    <ClCompile Include="tests\test 02\nit2.cpp">
+      <Filter>Tests\Test 02</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>
