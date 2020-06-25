@@ -196,9 +196,6 @@ MFS FileDescriptor::getFullName(char* buf) const
     for( uns32 i = 0; fext[i] != '\0' && i < FileExtSize-1; i++ )
         buf[len++] = fext[i];
 
-    // if the full filename only consists of a single dot ('.'), remove it
-    if( len == 1 ) len = 0;
-
     // append a null character to the end of the char buffer
     buf[len++] = '\0';
     return MFS_OK;
@@ -217,7 +214,7 @@ MFS FileDescriptor::cmpFullName(const char* str) const
     // compare strings character by character
     for( uns32 i = 0; i < FullFileNameSize; i++ )
     {
-        if( full_fname[i] > str[i] ) return MFS_GREATER;
+        if     ( full_fname[i] > str[i] ) return MFS_GREATER;
         else if( full_fname[i] < str[i] ) return MFS_LESS;
     }
 
@@ -285,9 +282,9 @@ MFS FileDescriptor::setFullName(const char* str)
 
 
     // copy the extension to the file descriptor
-    while( to < fext_len ) fname[to++] = str[from++];
+    while( to < fext_len ) fext[to++] = str[from++];
     // append the null character to the extension if it is shorter than 3B
-    if( to < FileExtSize-1 ) fname[to] = '\0';
+    if( to < FileExtSize-1 ) fext[to] = '\0';
 
 
     // return ok status code
@@ -314,11 +311,12 @@ void FileDescriptor::reserve(const char* fname)
 // free the file descriptor (reset file descriptor fields to their defaults)
 void FileDescriptor::release()
 {
-    resetFullName();   // clear the descriptor fields that hold the full filename
+    resetFullName();       // clear the descriptor fields that hold the full filename
     locINDEX = nullblk;    // resetting multi purpose index of file to an invalid number
-    filesize = 0;      // resetting filesize to zero
+    filesize = 0;          // resetting filesize to zero
+    eos = '\0';            // reset the unused byte to zero
 
-    // resetting first eight bytes of file
+    // resetting first couple of bytes of the file
     for( uns32 i = 0; i < FileSizeT; i++ ) byte[i] = 0;
 }
 

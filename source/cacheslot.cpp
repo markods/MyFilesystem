@@ -22,8 +22,8 @@ CacheSlot::CacheSlot(idx32 _slotidx)
 {
     // set slot index
     slotidx = _slotidx;
-    // set block id
-    blockid = nullblk;
+    // FIXME: set block id to be the null block id (maximum possible id) minus the index of the slot in the cache
+    blockid = nullblk - (1 + slotidx);
 
     // reset all slot status flags (since there are unused bits in the status variable)
     status = 0UL;
@@ -42,7 +42,7 @@ void CacheSlot::init()
     // slot index presumably doesn't change when the cache slot is reinitialized
  // slotidx = unchanged;
     // set block id
-    blockid = nullblk;
+    blockid = nullblk - (1 + slotidx);
 
     // reset all slot status flags (since there are unused bits in the status variable)
     status = 0UL;
@@ -90,7 +90,7 @@ int32 CacheSlot::incHitCount(int32 delta)
     // save the old hit count
     int32 old_hitcnt = (int32) getHitCount();
     // copy the current hit count
-    int32 hitcnt = old_hitcnt - delta;
+    int32 hitcnt = old_hitcnt + delta;
     // if the hit count is negative, reset it to zero
     if( hitcnt < 0           ) hitcnt = 0;
     // if the hit count is greater than its maximal allowed value, set it to its maximal allowed value
@@ -117,17 +117,6 @@ void CacheSlot::rstHitCount() { status &= ~(hitcnt_mask      << hitcnt_off     )
 
 
 
-// rvalue assignment operator for cache slot (lvalue isn't needed since the class has no special fields)
-CacheSlot& CacheSlot::operator=(const CacheSlot& slot)
-{
-    this->blockid = slot.blockid;
-    this->slotidx = slot.slotidx;
-    this->status  = slot.status;
-    return *this;
-}
-
-
-
 // used for swapping the cache slots in the heap based on their statuses (so that the cache slot with the best status for being swapped out is always at the top of the heap)
 bool operator< (const CacheSlot& slot1, const CacheSlot& slot2) { return slot1.status < slot2.status; }
 // used for comparing two cache slots with the same hash based on their block ids
@@ -146,11 +135,15 @@ std::ostream& operator<<(std::ostream& os, const CacheSlot& slot)
     char c = os.fill('0');
 
     // write cache slot info to output stream
-    os << "slot[" << setw(4) << slot.slotidx  << "]"
-       << hex << setw(4*bcw) << slot.blockid  << ":slot   " << dec
-       <<   (uns32) (slot.isFree()    ) << ":free "
-       <<   (uns32) (slot.isDirty()   ) << ":dirty "
-       <<   (uns32) (slot.isReadFrom()) << ":readfrom "
+    os << setw(4) << slot.slotidx  << ":slot";
+
+    // if the slot is taken, print its detailed info
+    if( !slot.isFree() )
+    os << " "
+       << hex << setw(4*bcw) << slot.blockid << ":block   " << dec
+       <<   (slot.isFree()     ? "free "     : "")
+       <<   (slot.isDirty()    ? "dirty "    : "")
+       <<   (slot.isReadFrom() ? "readfrom " : "")
        << setw(4) << slot.getHitCount() << ":hitcnt";
 
     // restore format flags and fill character

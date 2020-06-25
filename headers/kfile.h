@@ -7,7 +7,7 @@
 
 #pragma once
 #include "!global.h"
-#include <mutex>
+#include "semaphore.h"
 #include "traversal.h"
 #include "fd.h"
 class KFS;
@@ -34,8 +34,8 @@ private:
     char mode { '\0' };                  // access mode ('r'ead, 'w'rite + read, 'a'ppend + read)
     idx32 seekpos { 0 };                 // seek position (pointer to the file contents, used in reads and writes + appends)
 
-    std::mutex mutex_file_closed;        // mutex used for signalling that the file (handle) has been closed by a thread
-    siz32 mutex_file_closed_cnt { 0 };   // number of threads waiting for the file closed event
+    Semaphore sem_file_closed { 0 };     // semaphore used for signalling that the file (handle) has been closed by a thread
+    siz32 sem_file_closed_cnt { 0 };     // number of threads waiting for the file closed event
 
 
 // ====== thread-safe public interface ======

@@ -146,7 +146,7 @@ void BitVectorBlock::init()
 {
     // reset every bit in the bit vector block
     for( idx32 i = 0; i < BitVectorBlock::Size; i++ )
-        bits[i] = (uns8) 0x00;
+        bits[i] = (uns8) 0xff;
 }
 
 bool BitVectorBlock::isFree (idx32 idx) { return !!( bits[idx/8] & (1u << (7-idx%8)) ); }   // !! - not not, converts the result to bool (values 0 or 1)

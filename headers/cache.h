@@ -18,12 +18,11 @@ class Partition;
 class Cache
 {
 private:
-    Heap<CacheSlot> heapmap;   // heap (and hash map) of slot descriptors
-    Block* block;              // an array (pool) of blocks (stores blocks the cache slots describe)
+    Heap<CacheSlot> heap;   // heap (and hash map) of slot descriptors
+    Block* block;           // an array (pool) of blocks (stores blocks the cache slots describe)
 
-    siz32 SlotCount;           // capacity of cache in slots (blocks)
-    siz32 FreeSlots;           // number of free slots in cache
-
+    siz32 SlotCount;        // capacity of cache in slots (blocks)
+    siz32 FreeSlots;        // number of free slots in cache
 
 public:
     // construct the cache of given fixed size
@@ -50,7 +49,7 @@ public:
     MFS32 freeSlots(Partition* part, siz32 count);
 
 private:
-    // load a block into cache from given buffer (if there is enough room in the cache), return if successful
+    // load a block into cache from the given buffer (if there is enough room in the cache), return if successful
     MFS loadSlot(Block& buffer,   idx32 blkid);
     // load a block into cache from the disk partition (if there is enough room in the cache), return if successful
     MFS loadSlot(Partition* part, idx32 blkid);

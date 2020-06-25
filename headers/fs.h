@@ -28,7 +28,7 @@ public:
     // unmount the partition from the filesystem
     static char unmount();
     // format the mounted partition
-    static char format();
+    static char format(bool deep = false);
 
     // get the number of files in the root directory on the mounted partition
     static FileCnt readRootDir();

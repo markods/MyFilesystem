@@ -6,11 +6,10 @@
 // KFS...KFS...KFS...KFS...KFS...KFS...KFS...KFS...KFS...KFS...KFS...KFS...KFS...KFS...KFS...KFS...KFS...KFS...KFS...KFS...KFS...KFS...KFS...KFS
 
 #pragma once
-#include <mutex>
-#include <thread>
 #include <string>
 #include <unordered_map>
 #include "!global.h"
+#include "semaphore.h"
 #include "cache.h"
 #include "kfile.h"
 class Partition;
@@ -21,8 +20,8 @@ struct Traversal;
 // kernel's implementation of a filesystem
 // the filesystem only has a single (root) directory and a maximum of one mounted partition at any time
 // all the public methods in this class are thread safe, but:
-// +   the destructor must not be called before all threads pass the exclusive access mutex, and no new threads should start using this object after the destructor is called!
-// +   otherwise it could happen that a thread is using a deleted object (since we can't guarantee that there are no threads waiting on the exclusive mutex before the destructor finishes)
+// +   the destructor must not be called before all threads pass the exclusive access semaphore, and no new threads should start using this object after the destructor is called!
+// +   otherwise it could happen that a thread is using a deleted object (since we can't guarantee that there are no threads waiting on the exclusive access semaphore before the destructor finishes)
 // +   this is prevented by never releasing exclusive access from the destructor! (therefore the threads will wait indefinitely)
 class KFS
 {
@@ -30,8 +29,8 @@ private:
     Partition* part { nullptr };         // pointer to the mounted partition
     siz32 filecnt { nullsiz32 };         // cached number of files on the partition (instead of looking through the entire partition for files to count, take this cached copy)
 
-    bool formatted { false };            // true if the partition is formatted
-    bool prevent_open { false };         // prevent new files from being opened if true
+    bool formatted          { false };   // true if the partition is formatted
+    bool prevent_open       { false };   // prevent new files from being opened if true
     bool up_for_destruction { false };   // true if the partition is up for destruction
 
     // filesystem block cache, used for faster access to disk
@@ -39,13 +38,13 @@ private:
     // global open file table, maps a file path to a corresponding shared file instance
     std::unordered_map< std::string, KFile::Handle > open_files;
 
-    std::mutex mutex_excl;               // mutex used for exclusive access to the filesystem class
-    std::mutex mutex_part_unmounted;     // mutex used for signalling partition unmount events
-    std::mutex mutex_all_files_closed;   // mutex used for signalling that all files are closed on a partition
-    std::mutex mutex_no_threads_waiting; // mutex used for signalling that all threads that were waiting on any event have finished
+    Semaphore sem_excl               { 1 }; // semaphore used for exclusive access to the filesystem class
+    Semaphore sem_part_unmounted     { 0 }; // semaphore used for signalling partition unmount events
+    Semaphore sem_all_files_closed   { 0 }; // semaphore used for signalling that all files are closed on a partition
+    Semaphore sem_no_threads_waiting { 0 }; // semaphore used for signalling that all threads that were waiting on any event have finished
 
-    siz32 mutex_part_unmounted_cnt   { 0 };   // number of threads waiting for the partition unmount event
-    siz32 mutex_all_files_closed_cnt { 0 };   // number of threads waiting for the all files closed event
+    siz32 sem_part_unmounted_cnt   { 0 };   // number of threads waiting for the partition unmount event
+    siz32 sem_all_files_closed_cnt { 0 };   // number of threads waiting for the all files closed event
 
 
 // ====== thread-safe public interface ======
@@ -56,7 +55,7 @@ public:
 private:
     // construct the filesystem
     KFS();
-    // wait until there are [no threads waiting on any event] (except for the exclusive mutex), if there is at least one thread waiting wake it up
+    // wait until there are [no threads waiting on any event] (except for exclusive access), if there is at least one thread waiting wake it up
     // destruct the filesystem
     ~KFS();
 
@@ -71,7 +70,7 @@ public:
     // wait until [all open files on the partition are closed]
     // format the mounted partition, if there is no mounted partition return an error
     // wake up a single thread that waited for [all open files on the partition to be closed]
-    MFS format();
+    MFS format(bool deep = false);
 
     // check if the mounted partition is formatted
     MFS isFormatted();
@@ -109,7 +108,7 @@ private:
     // unmount the partition from the filesystem
     MFS unmount_uc();
     // format the mounted partition, if there is no mounted partition return an error
-    MFS format_uc();
+    MFS format_uc(bool deep = false);
 
     // check if the mounted partition is formatted
     MFS isFormatted_uc();

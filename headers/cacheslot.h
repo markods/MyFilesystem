@@ -59,8 +59,8 @@ public:
     void rstReadFrom();   // set the slot status as 'not readfrom'
     void rstHitCount();   // reset the slot hit count
 
-    // rvalue assignment operator for cache slot (lvalue isn't needed since the class has no special fields)
-    CacheSlot& operator=(const CacheSlot& slot);
+    // lvalue assignment operator for cache slot (rvalue isn't needed since the class has no special fields)
+    CacheSlot& operator=(const CacheSlot& slot) = default;
 
     // used for swapping the cache slots in the heap based on their statuses (so that the cache slot with the best status for being swapped out is always at the top of the heap)
     friend bool operator< (const CacheSlot& slot1, const CacheSlot& slot2);

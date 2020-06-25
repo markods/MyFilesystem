@@ -20,7 +20,7 @@ KFile::KFile(idx32 _locDIRE, idx32 _entDIRE, FileDescriptor& _fd)
     // add the forward slash to make the path absolute (hack, but works since there is only one directory -- the root directory /)
     filepath[0] = '/';
     // overwrite the full file name after the forward slash in the file path
-    fd.getFullName(&filepath[1]);
+    _fd.getFullName(&filepath[1]);
 
     // save the file descriptor position in the directory block
     locDIRE = _locDIRE;
@@ -28,9 +28,6 @@ KFile::KFile(idx32 _locDIRE, idx32 _entDIRE, FileDescriptor& _fd)
 
     // save the file descriptor
     fd = _fd;
-
-    // initialize the event mutexes to locked state (so that the threads trying to access them block)
-    mutex_file_closed.lock();
 }
 
 // destruct the file object -- close the file handle, but don't delete the file from the filesystem!

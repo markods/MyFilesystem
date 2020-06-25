@@ -31,10 +31,10 @@ char FS::unmount()
 }
 
 // format the mounted partition
-char FS::format()
+char FS::format(bool deep)
 {
     // transfer function call to the kernel filesystem class
-    MFS status = KFS::instance().format();
+    MFS status = KFS::instance().format(deep);
 
     // return if the operation was successful
     return ( status == MFS_OK ) ? MFS_FS_OK : MFS_FS_NOK;
