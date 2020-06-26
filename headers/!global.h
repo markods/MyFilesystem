@@ -137,7 +137,7 @@ constexpr siz32 FileSizeLim[FileSizeLimCount] = { FileSizeT, FileSizeS, FileSize
 
 
 // ====== types and constants in file "cache.h" ======
-constexpr int32 StartingHitCount  = 5;      // starting block hit count when the block is 
+constexpr int32 StartingAccessCount  = 5;   // starting block access count when the block is reserved
 constexpr flo32 CacheFreePercent  = .05f;   // percent of cache that should be cleared out by the 'free slots'  function
 constexpr flo32 CacheFlushPercent = .10f;   // percent of cache that should be flushed out by the 'flush slots' function
 

@@ -35,34 +35,51 @@ private:
     std::unordered_map<T, idx64> map;    // hash map used for finding element positions in binary heap (useful for updating elements in heap)
 
 public:
-    Heap();                      // construct the heap
-    ~Heap();                     // destruct the heap
-    void clear();                // clear the heap
+    // construct the heap
+    Heap();
+    // destruct the heap
+    ~Heap();
+    // clear the heap
+    void clear();
 
-    bool push(const T& elem);    // insert element into heap, return true if insertion successful
-    bool pop();                  // remove min element from heap, return true if removal successful
+    // insert the given element into the heap, return if the insertion was successful
+    bool push(const T& elem);
+    // remove the element at the given position from the heap (the minimum element is at the default position 0), return if the removal was successful
+    bool pop(idx64 idx = 0);
 
-    siz64 size() const;          // return the size of the heap
-    idx64 find(const T& elem);   // find the index of the given element, if the element doesn't exist return null index
+    // return the size of the heap
+    siz64 size() const;
+    // find the index of the given element, if the element doesn't exist return null index
+    idx64 find(const T& elem);
 
-    T& top();                    // return the min element, if the heap is empty return null element
-    T& at(idx64 idx);            // return the element with the specified index, if the index is out of bounds return null element
+    // return the min element, if the heap is empty return the null element
+    T& top();
+    // return the element with the specified index, if the index is out of bounds return the null element
+    T& at(idx64 idx);
 
-    bool update(idx64 idx, T* oldkey = nullptr);   // reorder element with given idx in heap (move it up towards or away from the root (min element) of the heap), return true if successful
-                                                   // use the given old key to update the hash map entry too (without the old value it wouldn't be possible to find it in O(log n))
-    void rebuild();              // rebuild the heap (update entire heap starting as if the elements were added one by one, and rebuild the hash map as well)
+    // reorder element with given idx in heap (move it up towards or away from the root (min element) of the heap), return true if successful
+    // use the given old key to update the hash map entry as well (without the old value it wouldn't be possible to find it in O(log n))
+    bool update(idx64 idx, T* oldkey = nullptr);
+    // rebuild the heap (update entire heap starting as if the elements were added one by one, and rebuild the hash map as well)
+    void rebuild();
 
 
-    friend std::ostream& operator<<(std::ostream& os, Heap& h);     // preorder print heap to given ostream
-    std::ostream& print(std::ostream& os, bool drawframe = true);   // preorder print heap to given ostream, and choose if the pretty print frame should be printed
+    // preorder print heap to given ostream
+    friend std::ostream& operator<<(std::ostream& os, Heap& h);
+    // preorder print heap to given ostream, and choose if the pretty print frame should be printed
+    std::ostream& print(std::ostream& os, bool drawframe = true);
 
 
 private:
-    bool fitcap();   // resize the underlying element array so that it better fits its elements
+    // resize the underlying element array so that it better fits its elements
+    bool fitcap();
 
-    constexpr static idx64 parent(idx64 idx);   // return the index of the parent      of the given element
-    constexpr static idx64 lchild(idx64 idx);   // return the index of the left  child of the given element
-    constexpr static idx64 rchild(idx64 idx);   // return the index of the right child of the given element
+    // return the index of the parent of the given element
+    constexpr static idx64 parent(idx64 idx);
+    // return the index of the left child of the given element
+    constexpr static idx64 lchild(idx64 idx);
+    // return the index of the right child of the given element
+    constexpr static idx64 rchild(idx64 idx);
 };
 
 
@@ -70,8 +87,11 @@ private:
 // construct the heap
 template<typename T> Heap<T>::Heap()
 {
+    // allocate space for the heap elements
     elem = new T[initcap];
+    // initialize the element count to zero
     cnt = 0;
+    // set the initial capacity of the heap to be its default value
     cap = initcap;
 }
 
@@ -101,7 +121,7 @@ template<typename T> void Heap<T>::clear()
 
 
 
-// insert element into heap, return true if insertion successful
+// insert the given element into the heap, return true if the insertion was successful
 template<typename T> bool Heap<T>::push(const T& _elem)
 {
     // if the size of the underlying array can't be increased, and it is full, then the new element can't be placed
@@ -117,27 +137,29 @@ template<typename T> bool Heap<T>::push(const T& _elem)
 
     // update the newly added element
     update(cnt-1);
+    // return that the operation was successful
     return true;
 }
 
-// remove min element from heap, return true if removal successful
-template<typename T> bool Heap<T>::pop()
+// remove the element at the given position from the heap (the minimum element is at the default position 0), return if the removal was successful
+template<typename T> bool Heap<T>::pop(idx64 idx)
 {
-    // if the array is empty, no elements can be popped
-    if( cnt == 0 ) return false;
+    // if the current element index is out of bounds, return false
+    if( idx >= cnt ) return false;
 
-    // remove the first (min) element from the hash mapping
-    map.erase(elem[0]);
-    // replace the first (min) element with the last element in the array (does nothing if there is only one element left, and it is the one being popped)
-    elem[0] = elem[cnt-1];
-    // decrease element count (thereby removing the last element from the array, but it is safely located at the beginning of the array)
+    // remove the element at the given position from the hash
+    map.erase(elem[idx]);
+    // replace the element at the given position with the last element in the array (does nothing if there is only one element left -- it is the one being removed)
+    elem[idx] = elem[cnt-1];
+    // decrease element count (thereby removing the last element from the array, but it is safely located at the given position in the array)
     // this step must be done before update is called, since update needs to know the exact element count
     cnt--;
 
-    // update the new first element (since it is not the minimal element, move it down the binary heap (tree) if needed)
-    update(0);
+    // update the heap (move the new element up/down the heap to fix the heap invariant)
+    update(idx);
     // resize the underlying array to better fit its elements
     fitcap();
+    // return that the operation was successful
     return true;
 }
 
@@ -154,15 +176,15 @@ template<typename T> idx64 Heap<T>::find(const T& _elem)
     return (el != map.cend()) ? el->second : nullidx64;
 }
 
-// return the min element, if the heap is empty return null element
+// return the min element, if the heap is empty return the null element
 template<typename T> T& Heap<T>::top() { return (cnt > 0) ? elem[0] : nullelem; }
-// return the element with the specified index, if the index is out of bounds return null element
+// return the element with the specified index, if the index is out of bounds return the null element
 template<typename T> T& Heap<T>::at(idx64 idx) { return (idx < cnt) ? elem[idx] : nullelem; }
 
 
 
 // reorder element with given idx in heap (move it up towards or away from the root (min element) of the heap), return true if successful
-// use the given old key to update the hash map entry too (without the old value it wouldn't be possible to find it in O(log n))
+// use the given old key to update the hash map entry as well (without the old value it wouldn't be possible to find it in O(log n))
 template<typename T> bool Heap<T>::update(idx64 idx, T* oldkey)
 {
     // if the current element index is out of bounds, return false
@@ -210,6 +232,8 @@ template<typename T> bool Heap<T>::update(idx64 idx, T* oldkey)
     if( oldkey ) map.erase(*oldkey);
     // finally update the remaining element index in the hash map
     map[elem[idx]] = idx;
+
+    // return that the operation was successful
     return true;
 }
 
@@ -224,7 +248,10 @@ template<typename T> void Heap<T>::rebuild()
     // this way, the elements shouldn't move much from their original positions, and the entire update is incremental
     // at the end of the loop the element count will have its old value, so no further action is needed
     for( cnt = 0; cnt < oldcnt; cnt++ )
-        update(cnt);   // update the newly added element (at the end of the element array)
+    {
+        // update the newly added element (at the end of the element array)
+        update(cnt);
+    }
 }
 
 
@@ -289,6 +316,7 @@ template<typename T> std::ostream& Heap<T>::print(std::ostream& os, bool drawfra
 
     // restore format flags and fill character
     os.flags(f); os.fill(c);
+    // return the given ostream
     return os;
 }
 
@@ -323,6 +351,7 @@ template<typename T> bool Heap<T>::fitcap()
     // delete the current array, and swap the current array pointer with the temporary array pointer
     delete[] elem; elem = temp;
 
+    // return that the operation was successful
     return true;
 }
 

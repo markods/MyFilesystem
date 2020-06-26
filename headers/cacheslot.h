@@ -10,54 +10,24 @@
 #include "!global.h"
 
 
-// describes a single cache slot
-class CacheSlot
+// a structure that represents a single cache slot in the filesystem cache
+// IMPORTANT: the cache slot must have a default constructor, since the heap that will hold cache slots requires it
+struct CacheSlot
 {
-private:
-    static const uns32 notfree_mask     = 1UL;
-    static const uns32 notdirty_mask    = 1UL;
-    static const uns32 notreadfrom_mask = 1UL;
-    static const uns32 hitcnt_mask      = (1UL<<24)-1;
-
-    static const uns32 notfree_off      = 31UL;
-    static const uns32 notdirty_off     = 30UL;
-    static const uns32 notreadfrom_off  = 29UL;
-    static const uns32 hitcnt_off       =  0UL;
-
-private:
-    idx32 slotidx;       // index of the slot in the cache
-    ClusterNo blockid;   // id of the block (on its partition) that occupies this slot
-    uns32 status;        // contains the following flags and counters -- notfree:1, notdirty:1, notreadfrom:1, hitcnt:24
+    idx32 position { nullidx32 };   // position of the block in the cache's array of blocks
+    idx32 blockid { nullblk };      // partition id of the block that occupies this slot
+    uns32 accesscnt { 0 };          // number of times the occupied slot has been accessed ( = 0 for free slots)
 
 
-public:
-    // default constructor for cache slot (can also be given a slot index)
-    // the default cache slot has an invalid slot index, an invalid block id, is free, clean, not read from, and its hitcount is zero
-    // the slot index must have a default, because the heap which will hold these cache slots has to default initialize them!
+    // construct the cache slot given a slot index (or using the default invalid slot index)
     CacheSlot(idx32 slotidx = nullidx32);
-    // initialize the slot with default values for its fields (except for the slot index in the cache, presumably that doesn't change when the slot is reinitialized)
-    // the reinitialized cache slot has its previous slot index, an invalid block id, is free, clean, not read from, and its hitcount is zero
-    void init();
+    // set the new cache slot location and reset the remaining variables
+    void setLocation(idx32 slotidx);
 
-    ClusterNo getBlockId() const;          // get the block id (describes the position of the block on its partition, currently there is a limit to only one partition in the filesystem)
-    idx32 getSlotIndex() const;            // get the slot index in the cache
-    void  setBlockId(ClusterNo blockid);   // set the block id (-||-)
-    void  setSlotIndex(idx32 slotidx);     // set the index of this cache slot in its cache
-
-    bool isFree()       const;   // return if the slot is free
-    bool isDirty()      const;   // return if the slot is dirty
-    bool isReadFrom()   const;   // return if the slot has been read from in the last iteration
-    uns32 getHitCount() const;   // return the slot hitcnt (probably increased multiple times in the last iteration, and definitely decreased once on the iteration ends)
-
-    void setFree();                   // set the slot status as 'free'
-    void setDirty();                  // set the slot status as 'dirty'
-    void setReadFrom();               // set the slot status as 'readfrom'
-    int32 incHitCount(int32 delta);   // increase hit count by given delta, return the part of the delta that was applied
-
-    void rstFree();       // set the slot status as 'not free'
-    void rstDirty();      // set the slot status as 'not dirty'
-    void rstReadFrom();   // set the slot status as 'not readfrom'
-    void rstHitCount();   // reset the slot hit count
+    // reserve the cache slot
+    void reserve(idx32 blkid);
+    // release the cache slot
+    void release();
 
     // lvalue assignment operator for cache slot (rvalue isn't needed since the class has no special fields)
     CacheSlot& operator=(const CacheSlot& slot) = default;
@@ -76,7 +46,7 @@ public:
 
 
 // template specialization of std::hash<T> for class cache slot
-// calls operator()() defined in the class
+// calls operator() defined in the class
 namespace std
 {
     template<> struct hash<CacheSlot>

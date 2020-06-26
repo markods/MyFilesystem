@@ -11,8 +11,8 @@
 #include "fd.h"
 #include "traversal.h"
 
-// FIXME: napraviti thread koji periodicno zove flush kesa (koristiti std::thread i std::time_mutex, nit prekinuti unutar nje same i uraditi join sa njom u destruktoru kfs-a!)
-// FIXME: proveriti da li file handle treba okruziti sa std::atomic<> i da li treba koristiti memory barijere!
+// TODO: make a thread that will periodically flush the cache (use std::thread and std::time_mutex, interrupt the thread within itself and make the kfs destructor join it)
+// TODO: check if the file handle should be surrounded with std::atomic<> and if memory barriers should be used
 
 
 // _____________________________________________________________________________________________________________________________________________
@@ -68,7 +68,7 @@ KFS::~KFS()
     }
 
     // unconditionally unmount the given partition
-    // FIXME: if there is an error, then the cache has not been fully flushed to the partition, and the filesystem is corrupt!
+    // WARNING: if there is an error, then the cache has not been fully flushed to the partition, and the filesystem is corrupt!
     unmount_uc();
 
     // set that the filesystem is up for destruction
@@ -568,9 +568,9 @@ MFS KFS::unmount_uc()
     if( part == nullptr ) return MFS_OK;
 
     // free all the slots from the cache that come from this mounted partition (since there is at most one mounted partition at any given time, free every occupied block in the cache)
-    cache.freeSlots(part, cache.getSlotCount() - cache.getFreeSlotCount());
+    cache.freeThisManySlots(part, cache.getSlotCount() - cache.getFreeCount());
     // if all the slots couldn't be freed, return an error code (if we skipped this step, we couldn't flush the cache slots that to the given partition later on)
-    if( cache.getFreeSlotCount() != cache.getSlotCount() ) return MFS_ERROR;
+    if( cache.getFreeCount() != cache.getSlotCount() ) return MFS_ERROR;
 
     // unmount the partition
     part = nullptr;
@@ -951,9 +951,9 @@ MFS KFS::alocFileDesc_uc(Traversal& t)
     if( t.status == MFS_OK ) return t.status;
 
     // otherwise, try to deallocate the newly allocated blocks, if the deallocation isn't successful return a serious error code (otherwise return that the allocation was unsuccessful)
-    // FIXME: if this deallocation fails, the filesystem bit vector is corrupt
-    //        currently there is no way to guarantee atomicity of all filesystem operations, since journalling isn't implemented
-    //        therefore we permanently lose one or two blocks on the partition :(
+    // WARNING: if this deallocation fails, the filesystem bit vector is corrupt
+    //          currently there is no way to guarantee atomicity of all filesystem operations, since journalling isn't implemented
+    //          therefore we permanently lose one or two blocks on the partition :(
     return ( ( t.status = freeBlocks_uc(ids) ) == MFS_OK ) ? MFS_NOK : MFS_ERROR;
 }
 
@@ -1080,9 +1080,9 @@ MFS KFS::freeFileDesc_uc(Traversal& t)
     } while( false );
 
     // try to deallocate blocks that are empty
-    // FIXME: if this deallocation fails, the filesystem bit vector is corrupt
-    //        currently there is no way to guarantee atomicity of all filesystem operations, since journalling isn't implemented
-    //        therefore we permanently lose one or two blocks on the partition :(
+    // WARNING: if this deallocation fails, the filesystem bit vector is corrupt
+    //          currently there is no way to guarantee atomicity of all filesystem operations, since journalling isn't implemented
+    //          therefore we permanently lose one or two blocks on the partition :(
     t.status = freeBlocks_uc(ids);
 
     // if the file descriptor was removed, then the operation is successful (even though the empty block deallocation could have failed, the root directory isn't corrupt, what is corrupt is the bit vector)
@@ -1662,10 +1662,10 @@ MFS KFS::writeToFile_uc(idx32 locDIRE, idx32 entDIRE, siz32& pos, siz32 count, c
     }
 
     // since the operation has failed, try to deallocate all the blocks that were previously allocated
-    // FIXME: if the write position was inside the file, and the write failed, the file contents are corrupt (not the file structure itself)
-    //        if this deallocation fails, the filesystem bit vector is corrupt
-    //        currently there is no way to guarantee atomicity of all filesystem operations, since journalling isn't implemented
-    //        therefore we could permanently lose many blocks on the partition :(
+    // WARNING: if the write position was inside the file, and the write failed, the file contents are corrupt (not the file structure itself)
+    //          if this deallocation fails, the filesystem bit vector is corrupt
+    //          currently there is no way to guarantee atomicity of all filesystem operations, since journalling isn't implemented
+    //          therefore we could permanently lose many blocks on the partition :(
     freeBlocks_uc(ids);
 
     // return an error code
@@ -1806,9 +1806,9 @@ MFS KFS::truncateFile_uc(idx32 locDIRE, idx32 entDIRE, siz32 pos, FileDescriptor
     if( cache.writeToPart(part, locDIRE, DIRE) != MFS_OK ) return MFS_ERROR;
 
     // deallocate all the blocks that are not needed anymore (after the truncation)
-    // FIXME: if this deallocation fails, the filesystem bit vector is corrupt
-    //        currently there is no way to guarantee atomicity of all filesystem operations, since journalling isn't implemented
-    //        therefore we could permanently lose many blocks on the partition :(
+    // WARNING: if this deallocation fails, the filesystem bit vector is corrupt
+    //          currently there is no way to guarantee atomicity of all filesystem operations, since journalling isn't implemented
+    //          therefore we could permanently lose many blocks on the partition :(
     freeBlocks_uc(ids);
 
     // return that the operation was successful
