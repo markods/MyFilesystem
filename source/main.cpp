@@ -18,8 +18,8 @@ int main()
     #endif
     #ifdef FUNC_TESTING
      // int MFS_TEST_01(); MFS_TEST_01();   // run the test 01
-     // int MFS_TEST_02(); MFS_TEST_02();   // run the test 02
-        int MFS_TEST_03(); MFS_TEST_03();   // run the test 03
+        int MFS_TEST_02(); MFS_TEST_02();   // run the test 02
+     // int MFS_TEST_03(); MFS_TEST_03();   // run the test 03
 #endif
     #if defined(UNIT_TESTING) || defined(FUNC_TESTING)
         return 0;   // exit the program after testing

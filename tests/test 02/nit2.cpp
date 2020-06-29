@@ -46,7 +46,7 @@ DWORD WINAPI nit2run(){
 		char filepath[]="/fajl2.dat";
 		File *f=FS::open(filepath,'r');
 		wait(_mutex); cout<< threadName << ": Otvoren fajl " << filepath << ""<<endl; signal(_mutex);
-		ofstream fout("izlaz1.dat", ios::out|ios::binary);
+		ofstream fout("izlaz1.jpg", ios::out|ios::binary);
 		char *buff=new char[f->getFileSize()];
 		f->read(f->getFileSize(),buff);
 		fout.write(buff,f->getFileSize());
@@ -92,7 +92,7 @@ DWORD WINAPI nit2run(){
 		char filepath[] = "/fajl25.dat";
 		File *f = FS::open(filepath, 'r');
 		wait(_mutex); cout << threadName << ": Otvoren fajl " << filepath << "" << endl; signal(_mutex);
-		ofstream fout("izlaz2.dat", ios::out | ios::binary);
+		ofstream fout("izlaz2.jpg", ios::out | ios::binary);
 		char *buff = new char[f->getFileSize()];
 		f->read(f->getFileSize(), buff);
 		fout.write(buff, f->getFileSize());

@@ -99,10 +99,10 @@ MFS FileDescriptor::getBlockCount(siz32 filesize, siz32& indx1_cnt, siz32& indx2
     data_cnt = (data_cnt + DataBlkSize-1) / DataBlkSize;
 
     // divide the number of data blocks by the index2 block size and round the resulting value up (to the ceiling)
-    indx2_cnt = (data_cnt + IndxBlkSize-1) / IndxBlkSize;
+    indx2_cnt = (data_cnt > 1) ? (data_cnt + IndxBlkSize-1) / IndxBlkSize : 0;
 
     // divide the number of index2 blocks by the index1 block size and round the resulting value up (to the ceiling)
-    indx1_cnt = (indx2_cnt + IndxBlkSize-1) / IndxBlkSize;
+    indx1_cnt = (indx2_cnt > 1) ? (indx2_cnt + IndxBlkSize-1) / IndxBlkSize : 0;
 
     // return that the operation was successful
     return MFS_OK;
@@ -142,13 +142,13 @@ MFS FileDescriptor::getTraversalEntries(siz32 pos, Traversal& f)
     // create variables that will hold the block count per level for the given file position
     siz32 indx1_cnt, indx2_cnt, data_cnt;
 
-    // get the block count per level for the given file position
-    getBlockCount(pos, indx1_cnt, indx2_cnt, data_cnt);
+    // get the block count per level for the given file size (the byte at the given position is considered to be a part of the file, that is why the file size is pos + 1)
+    getBlockCount(pos + 1, indx1_cnt, indx2_cnt, data_cnt);
 
-    // set the entries' indexes in the traversal path -- if the block count for a particular level is zero, the entry index for the previous level should be invalid (since the file doesn't have that level)
-    f.ent[iINDX1] = ( indx2_cnt != 0    ) ?     (indx2_cnt-1) % IndxBlkSize : nullidx32;
-    f.ent[iINDX2] = (  data_cnt != 0    ) ?      (data_cnt-1) % IndxBlkSize : nullidx32;
-    f.ent[iBLOCK] = ( pos > FileSizeT-1 ) ? (pos - FileSizeT) % DataBlkSize : nullidx32;
+    // set the entries' indexes in the traversal path -- if the block count for a particular level is less or equal to one, that means that the previous level doesn't exist -- the entry index for the previous level should be invalid
+    f.ent[iINDX1] = ( indx2_cnt > 1    ) ?     (indx2_cnt-1) % IndxBlkSize : nullidx32;
+    f.ent[iINDX2] = (  data_cnt > 1    ) ?      (data_cnt-1) % IndxBlkSize : nullidx32;
+    f.ent[iBLOCK] = ( pos >= FileSizeT ) ? (pos - FileSizeT) % DataBlkSize : nullidx32;
 
     // return that the operation was successful
     return f.status = MFS_OK;
@@ -212,14 +212,12 @@ MFS FileDescriptor::cmpFullName(const char* str) const
     getFullName(full_fname);
 
     // compare strings character by character
-    for( uns32 i = 0; i < FullFileNameSize; i++ )
-    {
-        if     ( full_fname[i] > str[i] ) return MFS_GREATER;
-        else if( full_fname[i] < str[i] ) return MFS_LESS;
-    }
+    int res = strcmp(full_fname, str);
 
-    // the filenames are identical
-    return MFS_EQUAL;
+    // return the comparison result
+    if( res > 0 ) return MFS_GREATER;
+    if( res < 0 ) return MFS_LESS;
+                  return MFS_EQUAL;
 }
 
 // set filename and extension from given string (null terminated)

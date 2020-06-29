@@ -1,5 +1,10 @@
 /.vs/
 /bin/
+
 /*.dat
 /*.ini
+/*.jpg
+/*.txt
+
+
 

@@ -130,11 +130,11 @@ private:
     // free the file descriptor with the given traversal position in the root directory, and compact index and directory block entries afterwards (possibly deallocate them if they are empty)
     MFS freeFileDesc_uc(Traversal& t);
 
-    // find a file descriptor with the specified path, return the traversal position and if the find is successful
+    // find a file descriptor with the specified path, return the traversal position and the file descriptor if the find is successful
     // "/file" -- find a file in the root directory
-    // "."     -- find the first location where an empty file descriptor should be in the root directory
-    // ""      -- count the number of files in the root directory (by matching a nonexistent file)
-    MFS findFile_uc(const char* filepath, Traversal& t);
+    // "/."    -- find the first location where an empty file descriptor should be in the root directory
+    // "/"     -- count the number of files in the root directory (by matching a nonexistent file)
+    MFS findFile_uc(const char* filepath, Traversal& t, FileDescriptor& fd);
     // find or create a file on the mounted partition given the full file path (e.g. /myfile.cpp) and access mode ('r'ead, 'w'rite + read, 'a'ppend + read), return the file position in the root directory and the file descriptor
     // +   read and append will fail if the file with the given full path doesn't exist
     // +   write will try to open a file before writing to it if the file doesn't exist

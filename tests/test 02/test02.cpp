@@ -24,10 +24,10 @@ int MFS_TEST_02(){
 
 	{//ucitavamo ulazni fajl u bafer, da bi nit 1 i 2 mogle paralelno da citaju
         #pragma warning(suppress : 4996)   // suppress the crt secure warning for the next line
-        FILE *f=fopen("p2.dat","rb");
+        FILE *f=fopen("ulaz.jpg","rb");
 
 		if(f==0){
-			cout<<"GRESKA: Nije nadjen ulazni fajl 'p2.dat' u os domacinu!"<<endl;
+			cout<<"GRESKA: Nije nadjen ulazni fajl 'ulaz.dat' u os domacinu!"<<endl;
 			system("PAUSE");
 			return 0;//exit program
 		}

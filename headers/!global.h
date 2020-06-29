@@ -128,8 +128,8 @@ constexpr siz32 BitvBlkSize = ClusterSize/BitvBlkEntrySize;   // in number of en
 // max file sizes of types Tiny, Small, Medium and Large, in bytes (only counting bytes of useful data)
 constexpr siz32 FileSizeT = 12;                                                // tiny   file size
 constexpr siz32 FileSizeS = FileSizeT +                         DataBlkSize;   // small  file size
-constexpr siz32 FileSizeM = FileSizeS +             IndxBlkSize*DataBlkSize;   // medium file size
-constexpr siz32 FileSizeL = FileSizeM + IndxBlkSize*IndxBlkSize*DataBlkSize;   // large  file size
+constexpr siz32 FileSizeM = FileSizeT +             IndxBlkSize*DataBlkSize;   // medium file size
+constexpr siz32 FileSizeL = FileSizeT + IndxBlkSize*IndxBlkSize*DataBlkSize;   // large  file size
 
 constexpr siz32 FileSizeLimCount = 4;                                                             // number of elements in file size limit array
 constexpr siz32 FileSizeLim[FileSizeLimCount] = { FileSizeT, FileSizeS, FileSizeM, FileSizeL };   // file size limit array
