@@ -1379,7 +1379,7 @@ MFS32 KFS::readFromFile_uc(idx32 locDIRE, idx32 entDIRE, siz32& pos, siz32 count
         if( f.loc[iINDX1] != nullblk && cache.readFromPart(part, f.loc[iINDX1], INDX1) != MFS_OK ) { status = MFS_ERROR; break; }
 
         // for every entry in the file's (sometimes artificial) index1 block
-        for( ;   status == MFS_NOK;   f.ent[iINDX1]++ )
+        for( ;   f.ent[iINDX1] < IndexBlock::Size && status == MFS_NOK;   f.ent[iINDX1]++ )
         {
             // get the index2 block location from the current index1 block entry
             f.loc[iINDX2] = INDX1.indx.entry[f.ent[iINDX1]];
@@ -1388,7 +1388,7 @@ MFS32 KFS::readFromFile_uc(idx32 locDIRE, idx32 entDIRE, siz32& pos, siz32 count
             if( f.loc[iINDX2] != nullblk && cache.readFromPart(part, f.loc[iINDX2], INDX2) != MFS_OK ) { status = MFS_ERROR; break; }
 
             // for every entry in the file's (sometimes artificial) current index2 block
-            for( ;   status == MFS_NOK;   f.ent[iINDX2]++ )
+            for( ;   f.ent[iINDX2] < IndexBlock::Size && status == MFS_NOK;   f.ent[iINDX2]++ )
             {
                 // get the data block location from the current index2 block entry
                 f.loc[iBLOCK] = INDX2.indx.entry[f.ent[iINDX2]];

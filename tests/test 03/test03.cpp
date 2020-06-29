@@ -544,99 +544,6 @@ int MFS_TEST_03()
 */
 
 
-    std::cout << "==============================< TEST 03 >======" << std::endl;
-
-    #pragma warning(suppress : 4996)   // suppress the crt secure warning for the next line
-    FILE *osf = fopen("ulaz.jpg", "rb");
-    if( osf==0 )
-        return 0;//exit program
-
-    #pragma warning(suppress : 4996)   // suppress the crt secure warning for the next line
-    FILE *isf = fopen("izlaz.jpg", "wb");
-    if( isf==0 )
-        return 0;//exit program
-
-
-    char c;
-    long osfbytesread = 0;
-    long isfbyteswritten = 0;
-
-
-    char partprefs[] = "p3.ini";
-    Partition partition { partprefs };
-    MFS status = MFS_OK;
-    File * f;
-    char c_test;
-
-    if( FS::mount(&partition) == MFS_FS_OK )
-    {
-        status = FS::format(true);
-
-        f = FS::open("/testfajl.dat", 'w');
-        if( f )
-        {
-            while( fread(&c, 1, 1, osf) > 0 )
-            {
-                if( osfbytesread < 30 )
-                    printf("%02x ", (unsigned char) c);
-
-                status = f->write(1, &c);
-
-             // delete f;
-             // FS::unmount();
-             // FS::mount(&partition);
-             // f = FS::open("/testfajl.dat", 'a');
-
-
-                f->seek(osfbytesread);
-                f->read(1, &c_test);
-
-                if( c != c_test )
-                    osfbytesread += 0;
-
-
-                if( status > 0 )
-                    osfbytesread++;
-                else
-                    osfbytesread += 0;
-
-            }
-            printf("\n");
-
-            printf("ucitano %li bajtova iz ulaznog fajla\n", osfbytesread);
-            delete f;
-        }
-        status = FS::unmount();
-    }
-    fclose(osf);
-
-
-    if( FS::mount(&partition) == MFS_FS_OK )
-    {
-        f = FS::open("/testfajl.dat", 'r');
-        if( f )
-        {
-            while( f->read(1, &c) > 0 )
-            {
-                if( isfbyteswritten < 30 )
-                    printf("%02x ", (unsigned char) c);
-
-                fwrite( &c, 1, 1, isf );
-                isfbyteswritten++;
-            }
-            printf("\n");
-
-            printf("upisano %li bajtova u izlazni fajl\n", isfbyteswritten);
-            delete f;
-        }
-        status = FS::unmount();
-    }
-    fclose(osf);
-
-
-
-    std::cout << "===============================================" << std::endl;
-    return 0;
 
 
 
@@ -735,5 +642,233 @@ int MFS_TEST_03()
     std::cout << "===============================================" << std::endl;
     return 0;
 */
+
+/*
+    std::cout << "==============================< TEST 03 >======" << std::endl;
+
+    #pragma warning(suppress : 4996)   // suppress the crt secure warning for the next line
+    FILE *osf = fopen("ulaz.jpg", "rb");
+    if( osf==0 )
+        return 0;//exit program
+
+    #pragma warning(suppress : 4996)   // suppress the crt secure warning for the next line
+    FILE *isf = fopen("izlaz.jpg", "wb");
+    if( isf==0 )
+        return 0;//exit program
+
+
+    char c;
+    long osfbytesread = 0;
+    long isfbyteswritten = 0;
+
+
+    char partprefs[] = "p3.ini";
+    Partition partition { partprefs };
+    MFS status = MFS_OK;
+    File * f;
+    char c_test;
+
+    if( FS::mount(&partition) == MFS_FS_OK )
+    {
+        status = FS::format(true);
+
+        f = FS::open("/testfajl.dat", 'w');
+        if( f )
+        {
+            while( fread(&c, 1, 1, osf) > 0 )
+            {
+                if( osfbytesread < 30 )
+                    printf("%02x ", (unsigned char) c);
+
+                status = f->write(1, &c);
+
+             // delete f;
+             // FS::unmount();
+             // FS::mount(&partition);
+             // f = FS::open("/testfajl.dat", 'a');
+
+
+                f->seek(osfbytesread);
+                f->read(1, &c_test);
+
+                if( c != c_test )
+                    osfbytesread += 0;
+
+
+                if( status > 0 )
+                    osfbytesread++;
+                else
+                    osfbytesread += 0;
+
+            }
+            printf("\n");
+
+            printf("ucitano %li bajtova iz ulaznog fajla\n", osfbytesread);
+            delete f;
+        }
+        status = FS::unmount();
+    }
+    fclose(osf);
+
+
+    if( FS::mount(&partition) == MFS_FS_OK )
+    {
+        f = FS::open("/testfajl.dat", 'r');
+        if( f )
+        {
+            while( f->read(1, &c) > 0 )
+            {
+                if( isfbyteswritten < 30 )
+                    printf("%02x ", (unsigned char) c);
+
+                fwrite( &c, 1, 1, isf );
+                isfbyteswritten++;
+            }
+            printf("\n");
+
+            printf("upisano %li bajtova u izlazni fajl\n", isfbyteswritten);
+            delete f;
+        }
+        status = FS::unmount();
+    }
+    fclose(osf);
+
+
+
+    std::cout << "===============================================" << std::endl;
+    return 0;
+*/
+
+
+
+    std::cout << "==============================< TEST 03 >======" << std::endl;
+
+    #pragma warning(suppress : 4996)   // suppress the crt secure warning for the next line
+    FILE *osf = fopen("ulaz.jpg", "rb");
+    if( osf==0 )
+        return 0;//exit program
+
+    #pragma warning(suppress : 4996)   // suppress the crt secure warning for the next line
+    FILE *isf = fopen("izlaz.jpg", "wb");
+    if( isf==0 )
+        return 0;//exit program
+
+    //----------------------------------------------------------------------------------
+    //ucitavamo ulazni fajl u bafer, da bi nit 1 i 2 mogle paralelno da citaju
+    char *ulazBuffer;
+    int ulazSize;
+    #pragma warning(suppress : 4996)   // suppress the crt secure warning for the next line
+    FILE *fp = fopen("ulaz.jpg", "rb");
+    if( fp==0 )
+        return 0;//exit program
+    ulazBuffer = new char[32*1024*1024];//32MB
+    ulazSize = fread(ulazBuffer, 1, 32*1024*1024, fp);
+    fclose(fp);
+    //----------------------------------------------------------------------------------
+
+
+
+    char c;
+    long osfbytesread = 0;
+    long isfbyteswritten = 0;
+
+
+    char partprefs[] = "p3.ini";
+    Partition partition { partprefs };
+    MFS status = MFS_OK;
+    File * f;
+    char c_test;
+
+    if( FS::mount(&partition) == MFS_FS_OK )
+    {
+        status = FS::format(true);
+
+        f = FS::open("/testfajl.dat", 'w');
+        if( f )
+        {
+            /*
+            while( fread(&c, 1, 1, osf) > 0 )
+            {
+                if( osfbytesread < 30 )
+                    printf("%02x ", (unsigned char) c);
+
+                status = f->write(1, &c);
+
+             // delete f;
+             // FS::unmount();
+             // FS::mount(&partition);
+             // f = FS::open("/testfajl.dat", 'a');
+
+
+                f->seek(osfbytesread);
+                f->read(1, &c_test);
+
+                if( c != c_test )
+                    osfbytesread += 0;
+
+
+                if( status > 0 )
+                    osfbytesread++;
+                else
+                    osfbytesread += 0;
+
+            }
+            printf("\n");
+            */
+
+            f->write(ulazSize, ulazBuffer);
+
+            printf("ucitano %i bajtova iz ulaznog fajla\n", ulazSize);
+            delete f;
+        }
+        status = FS::unmount();
+    }
+    fclose(osf);
+
+
+    //----------------------------------------------------------------------------------
+    char *izlazBuffer = new char[32*1024*1024];//32MB
+    int izlazBufferSize = 32*1024*1024;
+    //----------------------------------------------------------------------------------
+
+
+    if( FS::mount(&partition) == MFS_FS_OK )
+    {
+        f = FS::open("/testfajl.dat", 'r');
+        if( f )
+        {
+            /*
+            while( f->read(1, &c) > 0 )
+            {
+                if( isfbyteswritten < 30 )
+                    printf("%02x ", (unsigned char) c);
+
+                fwrite( &c, 1, 1, isf );
+                isfbyteswritten++;
+            }
+            printf("\n");
+            */
+            isfbyteswritten = f->read(izlazBufferSize, izlazBuffer);
+
+            fwrite(izlazBuffer, isfbyteswritten, 1, isf);
+
+            printf("upisano %li bajtova u izlazni fajl\n", isfbyteswritten);
+            delete f;
+        }
+        status = FS::unmount();
+    }
+    fclose(isf);
+
+    //----------------------------------------------------------------------------------
+    delete[] ulazBuffer;
+    //----------------------------------------------------------------------------------
+    //----------------------------------------------------------------------------------
+    delete[] izlazBuffer;
+    //----------------------------------------------------------------------------------
+
+
+    std::cout << "===============================================" << std::endl;
+    return 0;
+
 
 }
