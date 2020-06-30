@@ -14,7 +14,7 @@
 Cache::Cache(siz32 cap)
 {
     // reserve memory for the blocks that will be cached
-    block = new Block[cap];
+    block = (cap > 0) ? new Block[cap] : nullptr;
     // save the given capacity
     capacity = cap;
 
@@ -51,14 +51,19 @@ Cache::~Cache()
 // read a block from the disk partition, through the cache, into the given buffer
 MFS Cache::readFromPart(Partition* part, idx32 blkid, Buffer buffer)
 {
-    // if the cache has been destroyed, return an error code
-    if( !block ) return MFS_ERROR;
     // if the partition doesn't exist, return an error code
     if( !part ) return MFS_BADARGS;
     // if the block id is invalid, return an error code
     if( blkid == nullblk ) return MFS_BADARGS;
     // if the buffer doesn't exist, return an error code
     if( !buffer ) return MFS_BADARGS;
+
+    // if the cache doesn't exist, don't cache block accesses
+    if( !block )
+    {
+        // read the block from the partition into the given buffer, return if the read is successful
+        return ( part->readCluster(blkid, buffer) == MFS_PART_OK ) ? MFS_OK : MFS_ERROR;
+    }
 
     // create a variable that will hold the current pool index
     idx32 ipool;
@@ -69,7 +74,7 @@ MFS Cache::readFromPart(Partition* part, idx32 blkid, Buffer buffer)
     if( findSlot(blkid, ipool, slotloc) != MFS_OK )
     {
         // if there are no free slots available in the free pool, try to free some slots from the other pools
-        if( pool[ifree].size() == 0 ) freeThisManySlots(part, (siz32) std::ceil(capacity * CacheFreePercent));
+        if( pool[ifree].size() == 0 ) freeThisManySlots(part, 1);
 
         // try to load the block with the given id from the disk into the cache, if the load fails return an error code
         if( loadEmptySlotFromPart(part, blkid, ipool, slotloc) != MFS_OK ) return MFS_ERROR;
@@ -92,14 +97,19 @@ MFS Cache::readFromPart(Partition* part, idx32 blkid, Buffer buffer)
 // write a block from the given buffer, through the cache, into the disk partition
 MFS Cache::writeToPart(Partition* part, idx32 blkid, const Buffer buffer)
 {
-    // if the cache has been destroyed, return an error code
-    if( !block ) return MFS_ERROR;
     // if the partition doesn't exist, return an error code
     if( !part ) return MFS_BADARGS;
     // if the block id is invalid, return an error code
     if( blkid == nullblk ) return MFS_BADARGS;
     // if the buffer doesn't exist, return an error code
     if( !buffer ) return MFS_BADARGS;
+
+    // if the cache doesn't exist, don't cache block accesses
+    if( !block )
+    {
+        // write the block from the given buffer into the partition, return if the write is successful
+        return ( part->writeCluster(blkid, buffer) == MFS_PART_OK ) ? MFS_OK : MFS_ERROR;
+    }
 
     // create a variable that will hold the current pool index
     idx32 ipool;
@@ -112,7 +122,7 @@ MFS Cache::writeToPart(Partition* part, idx32 blkid, const Buffer buffer)
     if( findSlot(blkid, ipool, slotloc) != MFS_OK )
     {
         // if there are no free slots available in the free pool, try to free some slots from the other pools
-        if( pool[ifree].size() == 0 ) freeThisManySlots(part, (siz32) std::ceil(capacity * CacheFreePercent));
+        if( pool[ifree].size() == 0 ) freeThisManySlots(part, 1);
 
         // try to load the block with the given id from the buffer into the cache, if the load fails return an error code
         if( loadEmptySlotFromBuffer(buffer, blkid, ipool, slotloc) != MFS_OK ) return MFS_ERROR;
@@ -152,7 +162,7 @@ siz32 Cache::getDirtyCount() const { return (siz32) pool[idirty].size(); }
 // IMPORTANT: also decreases the slot access count by one for every non-free slot in the cache
 MFS32 Cache::flushThisManySlots(Partition* part, siz32 count)
 {
-    // if the cache has been destroyed, return an error code
+    // if the cache doesn't exist, return an error code
     if( !block ) return MFS_ERROR;
     // if the partition doesn't exist, return an error code
     if( !part ) return MFS_BADARGS;
@@ -222,7 +232,7 @@ MFS32 Cache::flushThisManySlots(Partition* part, siz32 count)
 // dirty blocks are flushed to disk before they are removed from cache (clean blocks are just removed)
 MFS32 Cache::freeThisManySlots(Partition* part, siz32 count)
 {
-    // if the cache has been destroyed, return an error code
+    // if the cache doesn't exist, return an error code
     if( !block ) return MFS_ERROR;
     // if the partition doesn't exist, return an error code
     if( !part ) return MFS_BADARGS;
@@ -315,7 +325,7 @@ MFS32 Cache::freeThisManySlots(Partition* part, siz32 count)
 // load a block with the given id from the given buffer into an empty slot in the cache, return if the operation is successful and the pool and location of the slot in the pool
 MFS Cache::loadEmptySlotFromBuffer(Buffer buffer, idx32 blkid, idx32& ipool, idx64& slotloc)
 {
-    // if the cache has been destroyed, return an error code
+    // if the cache doesn't exist, return an error code
     if( !block ) return MFS_ERROR;
     // if the cache doesn't have an empty slot left, return an error code
     if( pool[ifree].size() == 0 ) return MFS_ERROR;
@@ -350,7 +360,7 @@ MFS Cache::loadEmptySlotFromBuffer(Buffer buffer, idx32 blkid, idx32& ipool, idx
 // load a block with the given id from the disk partition into an empty slot in the cache, return if the operation is successful and the pool and location of the slot in the pool
 MFS Cache::loadEmptySlotFromPart(Partition* part, idx32 blkid, idx32& ipool, idx64& slotloc)
 {
-    // if the cache has been destroyed, return an error code
+    // if the cache doesn't exist, return an error code
     if( !block ) return MFS_ERROR;
     // if the cache doesn't have an empty slot left, return an error code
     if( pool[ifree].size() == 0 ) return MFS_ERROR;

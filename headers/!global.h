@@ -144,7 +144,7 @@ constexpr flo32 CacheFlushPercent = .10f;   // percent of cache that should be f
 
 
 // ====== types and constants in file "kfs.h" ======
-constexpr siz32 InitialCacheSize  = 100;   // initial filesystem cache size
+constexpr siz32 InitialCacheSize  = 0;     // initial filesystem cache size
 constexpr idx32 BitvLocation      = 0;     // index of the bit vector block in the partition
 constexpr idx32 RootIndx1Location = 1;     // index of the first level index block of the root directory in the partition
 constexpr idx32 BlockPoolLocation = 2;     // index of the first block in the general purpose block pool

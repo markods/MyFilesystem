@@ -1,10 +1,11 @@
 #include <iostream>
+#include <vector>
+#include <thread>
 #include "!global.h"
 #include "partition.h"
 #include "block.h"
 #include "fs.h"
 #include "file.h"
-#include <vector>
 
 
 int MFS_TEST_03()
@@ -740,7 +741,7 @@ int MFS_TEST_03()
 */
 
 
-
+/*
     std::cout << "==============================< TEST 03 >======" << std::endl;
 
     #pragma warning(suppress : 4996)   // suppress the crt secure warning for the next line
@@ -786,35 +787,33 @@ int MFS_TEST_03()
         f = FS::open("/testfajl.dat", 'w');
         if( f )
         {
-            /*
-            while( fread(&c, 1, 1, osf) > 0 )
-            {
-                if( osfbytesread < 30 )
-                    printf("%02x ", (unsigned char) c);
-
-                status = f->write(1, &c);
-
-             // delete f;
-             // FS::unmount();
-             // FS::mount(&partition);
-             // f = FS::open("/testfajl.dat", 'a');
-
-
-                f->seek(osfbytesread);
-                f->read(1, &c_test);
-
-                if( c != c_test )
-                    osfbytesread += 0;
-
-
-                if( status > 0 )
-                    osfbytesread++;
-                else
-                    osfbytesread += 0;
-
-            }
-            printf("\n");
-            */
+        //  while( fread(&c, 1, 1, osf) > 0 )
+        //  {
+        //      if( osfbytesread < 30 )
+        //          printf("%02x ", (unsigned char) c);
+        //
+        //      status = f->write(1, &c);
+        //
+        //   // delete f;
+        //   // FS::unmount();
+        //   // FS::mount(&partition);
+        //   // f = FS::open("/testfajl.dat", 'a');
+        //
+        //
+        //      f->seek(osfbytesread);
+        //      f->read(1, &c_test);
+        //
+        //      if( c != c_test )
+        //          osfbytesread += 0;
+        //
+        //
+        //      if( status > 0 )
+        //          osfbytesread++;
+        //      else
+        //          osfbytesread += 0;
+        //
+        //  }
+        //  printf("\n");
 
             f->write(ulazSize, ulazBuffer);
 
@@ -837,17 +836,16 @@ int MFS_TEST_03()
         f = FS::open("/testfajl.dat", 'r');
         if( f )
         {
-            /*
-            while( f->read(1, &c) > 0 )
-            {
-                if( isfbyteswritten < 30 )
-                    printf("%02x ", (unsigned char) c);
+        //  while( f->read(1, &c) > 0 )
+        //  {
+        //      if( isfbyteswritten < 30 )
+        //          printf("%02x ", (unsigned char) c);
+        //
+        //      fwrite( &c, 1, 1, isf );
+        //      isfbyteswritten++;
+        //  }
+        //  printf("\n");
 
-                fwrite( &c, 1, 1, isf );
-                isfbyteswritten++;
-            }
-            printf("\n");
-            */
             isfbyteswritten = f->read(izlazBufferSize, izlazBuffer);
 
             fwrite(izlazBuffer, isfbyteswritten, 1, isf);
@@ -869,6 +867,54 @@ int MFS_TEST_03()
 
     std::cout << "===============================================" << std::endl;
     return 0;
+*/
 
+    void f1();
+
+    std::cout << "==============================< TEST 03 >======" << std::endl;
+    MFS status;
+    char partprefs[] = "p3.ini";
+    Partition partition { partprefs };
+    if( FS::mount(&partition) == MFS_FS_OK )
+    {
+        status = FS::format(true);
+        std::thread t1 { f1 };
+        std::thread t2 { f1 };
+        std::thread t3 { f1 };
+        t1.join();
+        t2.join();
+        t3.join();
+        status = FS::unmount();
+    }
+
+
+    std::cout << "===============================================" << std::endl;
+    return 0;
+}
+
+void f1()
+{
+    MFS status = MFS_OK;
+    char filepath[] = "/fajl1.dat";
+    File * f;
+    BytesCnt bytescnt = 10;   long repeat = 5;
+    char *buffer = new char[bytescnt];
+    for( unsigned long i = 0; i < bytescnt; i++ )
+        buffer[i] = 'a' + i % 26;
+// -----------------------------------------
+
+    char mode = 'w';
+    if( FS::doesExists(filepath) )
+        mode = 'a';
+
+    f = FS::open(filepath, mode);
+    if( f )
+    {
+        for( long j = 0; j < repeat; j++ )
+            status = f->write(bytescnt, buffer);
+        delete f;
+    }
+
+    delete[] buffer;
 
 }
