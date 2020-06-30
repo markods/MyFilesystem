@@ -43,6 +43,9 @@ KFile::~KFile()
 // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
 MFS32 KFile::read(siz32 count, Buffer buffer)
 {
+    // if the file access mode is invalid for this operation, return an error code
+    if( mode != 'r' && mode != 'w' && mode != 'a' ) return MFS_BADARGS;
+
     // get an instance to the kernel filesystem class, and call its corresponding method
     return KFS::instance().readFromFile(*this, count, buffer);
 }
@@ -51,6 +54,9 @@ MFS32 KFile::read(siz32 count, Buffer buffer)
 // the caller has to provide enough memory in the buffer for this function to work correctly (at least 'count' bytes)
 MFS KFile::write(siz32 count, Buffer buffer)
 {
+    // if the file access mode is invalid for this operation, return an error code
+    if( mode != 'w' && mode != 'a' ) return MFS_BADARGS;
+
     // get an instance to the kernel filesystem class, and call its corresponding method
     return KFS::instance().writeToFile(*this, count, buffer);
 }
@@ -58,6 +64,9 @@ MFS KFile::write(siz32 count, Buffer buffer)
 // throw away the file's contents starting from the seek position until the end of the file (but keep the file descriptor in the filesystem)
 MFS KFile::truncate()
 {
+    // if the file access mode is invalid for this operation, return an error code
+    if( mode != 'w' && mode != 'a' ) return MFS_BADARGS;
+
     // get an instance to the kernel filesystem class, and call its corresponding method
     return KFS::instance().truncateFile(*this);
 }
