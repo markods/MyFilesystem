@@ -11,9 +11,6 @@
 #include "fd.h"
 #include "traversal.h"
 
-// TODO: make a thread that will periodically flush the cache (use std::thread and std::time_mutex, interrupt the thread within itself and make the kfs destructor join it)
-// TODO: check if the file handle should be surrounded with std::atomic<> and if memory barriers should be used
-
 
 // _____________________________________________________________________________________________________________________________________________
 // THREAD.SAFE.PUBLIC.INTERFACE...THREAD.SAFE.PUBLIC.INTERFACE...THREAD.SAFE.PUBLIC.INTERFACE...THREAD.SAFE.PUBLIC.INTERFACE...THREAD.SAFE.PUBLI
